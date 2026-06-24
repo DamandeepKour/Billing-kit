@@ -1,56 +1,62 @@
 # billing-kit
 
-Backend Node.js + TypeScript NPM package for **invoicing**, **GST tax**, **Stripe payments**, **refunds**, and **webhooks**.
+A Node.js billing library for invoices, GST, Stripe payments, refunds, and webhooks.
 
-> **Important:** This is an **SDK/library**, not a hosted API server. It does **not** expose HTTP endpoints by itself. You install it in your Node.js app and call methods from your code — or wrap those methods in your own REST routes.
-
----
-
-## What you need before using
-
-| Requirement | Required for | Where to get it |
-|-------------|--------------|-----------------|
-| **Node.js 18+** | Everything | [nodejs.org](https://nodejs.org) |
-| **Stripe account** | Payments, invoices, refunds | [stripe.com](https://stripe.com) |
-| `STRIPE_SECRET_KEY` | All Stripe operations | Stripe Dashboard → Developers → API keys |
-| `STRIPE_WEBHOOK_SECRET` | Webhook verification only | Stripe Dashboard → Webhooks → signing secret |
-| **Stripe Customer ID** (`cus_xxx`) | Invoices & subscriptions | Create via Stripe API or Dashboard |
-
-### Optional config
-
-| Config | Purpose | Example |
-|--------|---------|---------|
-| `currency` | Default currency | `"inr"` (default) |
-| `tax.enabled` | Apply GST on invoices | `true` |
-| `tax.defaultRate` | GST % | `18` |
-| `tax.stateCode` | Your business state (seller) | `"MH"` |
-
-Copy env template:
-
-```bash
-cp .env.example .env
-# Edit .env with your Stripe test keys
-```
-
----
-
-## Install
-
-### As a consumer (after publishing to npm)
+Install it in your backend. Call methods from your code. Done.
 
 ```bash
 npm install billing-kit
 ```
 
-### For local development (this repo)
+---
+
+## What is this?
+
+`billing-kit` is a **library** (SDK), not a website or API server.
+
+You use it inside your own Node.js app — Express, Fastify, NestJS, or a plain script.
+
+```
+Your app  →  billing-kit  →  Stripe
+```
+
+It handles the billing logic so you don't have to wire Stripe calls yourself every time.
+
+**It does NOT:**
+- Start a server
+- Give you ready-made URLs like `https://billing-kit.com/api/pay`
+- Include a frontend
+
+**It DOES:**
+- Create invoices
+- Calculate GST (CGST / SGST / IGST)
+- Take payments via Stripe
+- Process refunds
+- Verify Stripe webhooks
+
+---
+
+## What you need
+
+1. **Node.js 18+**
+2. A **Stripe account** → [stripe.com](https://stripe.com)
+3. Your **Stripe secret key** → Dashboard → Developers → API keys  
+   Use test key first: `sk_test_...`
+4. For webhooks only: **Webhook signing secret** → Dashboard → Webhooks → `whsec_...`
+5. A **Stripe customer ID** (`cus_xxx`) when creating invoices or subscriptions
+
+Create a `.env` file:
 
 ```bash
-git clone <your-repo-url>
-cd billing-kit
-npm install
-npm run build
-npm test
+cp .env.example .env
 ```
+
+```env
+STRIPE_SECRET_KEY=sk_test_your_key_here
+STRIPE_WEBHOOK_SECRET=whsec_your_secret_here
+```
+
+Never commit `.env` to git. It's already in `.gitignore`.
 
 ---
 
@@ -59,127 +65,86 @@ npm test
 ```typescript
 import { BillingKit } from "billing-kit";
 
+// 1. Create one instance (do this once when your app starts)
 const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
-  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET, // only for webhooks
   currency: "inr",
   tax: {
     enabled: true,
-    defaultRate: 18,
-    stateCode: "MH", // your seller state
+    defaultRate: 18,      // 18% GST
+    stateCode: "MH",      // your business state
   },
 });
 
-// 1. Calculate GST (no Stripe call — runs locally)
+// 2. Calculate tax (runs locally — no Stripe call)
 const tax = billing.calculateTax({
   amount: 10000,
   sellerState: "MH",
   buyerState: "MH",
 });
-console.log(tax);
-// { cgst: 900, sgst: 900, igst: 0, totalTax: 1800, total: 11800 }
+// → totalTax: 1800, total: 11800
 
-// 2. Create invoice (calls Stripe)
+// 3. Create an invoice (calls Stripe)
 const invoice = await billing.createInvoice({
   customerId: "cus_xxxxxxxx",
   lineItems: [
-    { description: "Pro plan", quantity: 1, unitAmount: 99900 }, // paise
+    { description: "Pro plan", quantity: 1, unitAmount: 99900 },
   ],
   buyerState: "MH",
 });
 
-// 3. Create payment (calls Stripe)
+// 4. Take a payment (calls Stripe)
 const payment = await billing.createPayment({
   amount: 99900,
   customerId: "cus_xxxxxxxx",
 });
 
-// 4. Refund (calls Stripe)
-const refund = await billing.refundPayment({
+// 5. Refund if needed (calls Stripe)
+await billing.refundPayment({
   paymentId: payment.id,
   reason: "requested_by_customer",
 });
 ```
 
+**Note on amounts:** Use the smallest unit — paise for INR, cents for USD.  
+`99900` = ₹999.00
+
 ---
 
-## SDK API reference (methods you call in code)
+## All available methods
 
-These are **not HTTP URLs** — they are TypeScript/JavaScript methods on `BillingKit`:
+| Method | What it does |
+|--------|--------------|
+| `calculateTax()` | GST breakdown — CGST, SGST, or IGST |
+| `createInvoice()` | Create a draft invoice |
+| `getInvoice()` | Get invoice by ID |
+| `finalizeInvoice()` | Lock invoice and make it payable |
+| `createPayment()` | Create a Stripe payment |
+| `getPayment()` | Check payment status |
+| `refundPayment()` | Full or partial refund |
+| `createSubscription()` | Start a subscription |
+| `cancelSubscription()` | Cancel at end of billing period |
+| `verifyWebhook()` | Check that a Stripe webhook is real |
+| `handleWebhook()` | Run your code when events arrive |
 
-| Method | Description | Stripe call? |
-|--------|-------------|--------------|
-| `calculateTax(input)` | GST breakdown (CGST/SGST/IGST) | No |
-| `createInvoice(input)` | Create draft invoice with line items | Yes |
-| `getInvoice(id)` | Fetch invoice by ID | Yes |
-| `finalizeInvoice(id)` | Finalize & make invoice payable | Yes |
-| `createPayment(input)` | Create PaymentIntent | Yes |
-| `getPayment(id)` | Get payment status | Yes |
-| `refundPayment(input)` | Full or partial refund | Yes |
-| `createSubscription(input)` | Start subscription | Yes |
-| `cancelSubscription(id)` | Cancel at period end | Yes |
-| `verifyWebhook(payload, sig)` | Verify Stripe webhook signature | No |
-| `handleWebhook(event, handlers)` | Run your handlers by event type | No |
+---
 
-### Input examples
+## Want REST API endpoints?
 
-```typescript
-// Invoice
-await billing.createInvoice({
-  customerId: "cus_xxx",
-  lineItems: [
-    { description: "Item A", quantity: 2, unitAmount: 50000 },
-  ],
-  dueDate: new Date("2026-07-01"),
-  buyerState: "KA",
-  metadata: { orderId: "order_123" },
-});
+`billing-kit` doesn't ship endpoints. **You** add them in your app.
 
-// Payment
-await billing.createPayment({
-  amount: 100000,
-  currency: "inr",
-  customerId: "cus_xxx",
-  paymentMethodId: "pm_xxx", // optional — auto-confirms if set
-  metadata: { orderId: "order_123" },
-});
+Think of it like this:
 
-// Refund (omit amount for full refund)
-await billing.refundPayment({
-  paymentId: "pi_xxx",
-  amount: 50000,
-  reason: "requested_by_customer",
-});
-
-// Subscription
-await billing.createSubscription({
-  customerId: "cus_xxx",
-  priceId: "price_xxx",
-  trialDays: 14,
-});
+```
+POST /api/invoices     →  billing.createInvoice(req.body)
+GET  /api/invoices/:id →  billing.getInvoice(req.params.id)
+POST /api/payments     →  billing.createPayment(req.body)
+POST /api/tax          →  billing.calculateTax(req.body)
+POST /webhooks/stripe  →  billing.verifyWebhook(body, signature)
 ```
 
-> **Amounts** are in the **smallest currency unit** (paise for INR, cents for USD). Example: `99900` = ₹999.00
-
----
-
-## How to expose REST endpoints (your app wraps billing-kit)
-
-`billing-kit` does not ship a server. **You** add routes in Express, Fastify, NestJS, etc.:
-
-| Your REST endpoint | billing-kit call |
-|--------------------|------------------|
-| `POST /api/invoices` | `billing.createInvoice(req.body)` |
-| `GET /api/invoices/:id` | `billing.getInvoice(req.params.id)` |
-| `POST /api/invoices/:id/finalize` | `billing.finalizeInvoice(req.params.id)` |
-| `POST /api/payments` | `billing.createPayment(req.body)` |
-| `GET /api/payments/:id` | `billing.getPayment(req.params.id)` |
-| `POST /api/payments/:id/refund` | `billing.refundPayment({ paymentId: id, ...body })` |
-| `POST /api/tax/calculate` | `billing.calculateTax(req.body)` |
-| `POST /webhooks/stripe` | `billing.verifyWebhook(rawBody, signature)` |
-
-### Express example — REST + webhook
+### Minimal Express example
 
 ```typescript
 import express from "express";
@@ -191,134 +156,131 @@ app.use(express.json());
 const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
-  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
+  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
   tax: { enabled: true, defaultRate: 18, stateCode: "MH" },
 });
 
-// REST: calculate GST
-app.post("/api/tax/calculate", (req, res) => {
-  const tax = billing.calculateTax(req.body);
-  res.json(tax);
+// Calculate GST
+app.post("/api/tax", (req, res) => {
+  res.json(billing.calculateTax(req.body));
 });
 
-// REST: create invoice
+// Create invoice
 app.post("/api/invoices", async (req, res) => {
-  try {
-    const invoice = await billing.createInvoice(req.body);
-    res.status(201).json(invoice);
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
+  const invoice = await billing.createInvoice(req.body);
+  res.status(201).json(invoice);
 });
 
-// REST: create payment
+// Create payment
 app.post("/api/payments", async (req, res) => {
   const payment = await billing.createPayment(req.body);
   res.status(201).json(payment);
 });
 
-// Webhook (needs raw body — separate route)
-app.post(
-  "/webhooks/stripe",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      const sig = req.headers["stripe-signature"] as string;
-      const event = billing.verifyWebhook(req.body, sig);
+// Stripe webhook (must use raw body, not express.json)
+app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
+  const sig = req.headers["stripe-signature"] as string;
+  const event = billing.verifyWebhook(req.body, sig);
 
-      await billing.handleWebhook(event, {
-        "invoice.paid": async () => { /* update DB */ },
-        "payment_intent.succeeded": async () => { /* fulfill order */ },
-      });
+  await billing.handleWebhook(event, {
+    "invoice.paid": async () => {
+      // e.g. mark order as paid in your database
+    },
+  });
 
-      res.json({ received: true });
-    } catch (err) {
-      res.status(400).send(`Webhook Error: ${(err as Error).message}`);
-    }
-  },
-);
+  res.json({ received: true });
+});
 
 app.listen(3000);
 ```
 
-Full examples live in:
-
-- `examples/basic-usage.ts`
-- `examples/express-server.ts`
+More examples: `examples/basic-usage.ts` and `examples/express-server.ts`
 
 ---
 
-## Webhook setup (Stripe Dashboard)
+## Webhooks (Stripe → your server)
 
-1. Go to **Stripe Dashboard → Developers → Webhooks**
-2. Add endpoint URL: `https://your-domain.com/webhooks/stripe`
-3. Select events: `invoice.paid`, `payment_intent.succeeded`, `payment_intent.payment_failed`
-4. Copy **Signing secret** → set as `STRIPE_WEBHOOK_SECRET`
-5. Use `billing.verifyWebhook()` on every incoming webhook before trusting the payload
+When a payment succeeds or an invoice is paid, Stripe sends an HTTP POST to your server.
+
+**Setup:**
+1. Stripe Dashboard → Developers → Webhooks
+2. Add URL: `https://your-domain.com/webhooks/stripe`
+3. Pick events: `invoice.paid`, `payment_intent.succeeded`, `payment_intent.payment_failed`
+4. Copy the signing secret → put in `STRIPE_WEBHOOK_SECRET`
+5. Always call `billing.verifyWebhook()` before trusting the request
 
 ---
 
-## Project structure
+## GST rules (built-in)
 
-```
-billing-kit/
-├── src/
-│   ├── BillingKit.ts       # Main class — use this
-│   ├── invoice/
-│   ├── payment/            # Stripe provider
-│   ├── tax/                # GST calculator
-│   ├── subscription/
-│   ├── refund/
-│   ├── webhook/
-│   ├── types/
-│   └── utils/
-├── tests/
-├── examples/
-├── package.json
-├── tsconfig.json
-└── PACKAGE_GUIDE.md        # Full architecture guide
+| Buyer and seller in same state | CGST + SGST (split 50/50) |
+|------------------------------|---------------------------|
+| Buyer and seller in different states | IGST only |
+
+```typescript
+// Same state (Maharashtra → Maharashtra)
+billing.calculateTax({ amount: 10000, rate: 18, sellerState: "MH", buyerState: "MH" });
+// cgst: 900, sgst: 900, igst: 0
+
+// Different states (Maharashtra → Karnataka)
+billing.calculateTax({ amount: 10000, rate: 18, sellerState: "MH", buyerState: "KA" });
+// igst: 1800, cgst: 0, sgst: 0
 ```
 
 ---
 
-## Development commands
+## Project layout
+
+```
+src/
+├── BillingKit.ts     ← start here — main class
+├── invoice/          ← invoice logic
+├── payment/          ← Stripe integration
+├── tax/              ← GST calculator
+├── refund/
+├── subscription/
+├── webhook/
+└── types/            ← TypeScript types
+```
+
+---
+
+## Development
 
 ```bash
-npm install      # Install dependencies
-npm run build    # Build dist/ (CJS + ESM + .d.ts)
-npm test         # Run Vitest tests
-npm run test:watch
+npm install       # first time only (~20s)
+npm run build     # compile to dist/
+npm test          # run tests
 ```
 
 ---
 
-## Git setup
+## Git
 
 ```bash
-cd billing-kit
 git init
 git add .
-git commit -m "Initial billing-kit scaffold"
-git remote add origin <your-repo-url>
-git push -u origin main
+git commit -m "Add billing-kit"
 ```
 
-`.gitignore` already excludes `node_modules/`, `dist/`, `.env`, and logs. **Never commit** `STRIPE_SECRET_KEY` or `STRIPE_WEBHOOK_SECRET`.
+Safe to commit: source code, `package.json`, `README.md`  
+Never commit: `.env`, `node_modules/`, `dist/`
 
 ---
 
-## Publish to npm (when ready)
+## Publish to npm
 
 ```bash
-npm login
 npm run build
 npm test
 npm publish
 ```
 
-If the name `billing-kit` is taken, use a scoped name: `@yourorg/billing-kit`.
-
 ---
+
+## More docs
+
+See [PACKAGE_GUIDE.md](./PACKAGE_GUIDE.md) for full architecture and API design details.
 
 ## License
 
