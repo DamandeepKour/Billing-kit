@@ -11,6 +11,7 @@ export enum TransactionStatus {
   SUCCESS = "SUCCESS",
   FAILED = "FAILED",
 }
+
 export interface RecordTransactionInput {
   type: TransactionType;
   amount: number;
