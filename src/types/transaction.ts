@@ -6,6 +6,11 @@ export enum TransactionType {
   CHARGEBACK = "CHARGEBACK",
 }
 
+export enum TransactionStatus {
+  PENDING = "PENDING",
+  SUCCESS = "SUCCESS",
+  FAILED = "FAILED",
+}
 export interface RecordTransactionInput {
   type: TransactionType;
   amount: number;
