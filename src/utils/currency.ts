@@ -5,16 +5,15 @@ const MINOR_UNIT_FACTORS: Record<string, number> = {
   gbp: 100,
 };
 
-export function toMinorUnits(amount: number, currency: string): number {
-  const factor = MINOR_UNIT_FACTORS[currency.toLowerCase()] ?? 100;
-  return Math.round(amount * factor);
-}
-
-export function fromMinorUnits(amount: number, currency: string): number {
-  const factor = MINOR_UNIT_FACTORS[currency.toLowerCase()] ?? 100;
-  return amount / factor;
-}
-
 export function normalizeCurrency(currency?: string): string {
   return (currency ?? "inr").toLowerCase();
+}
+
+export function roundAmount(value: number): number {
+  return Math.round(value);
+}
+
+export function toMinorUnits(amount: number, currency: string): number {
+  const factor = MINOR_UNIT_FACTORS[normalizeCurrency(currency)] ?? 100;
+  return roundAmount(amount * factor);
 }

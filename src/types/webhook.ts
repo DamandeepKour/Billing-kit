@@ -1,11 +1,6 @@
 export interface WebhookEvent {
   id: string;
   type: string;
+  provider: string;
   data: unknown;
-}
-
-export type WebhookEventHandler = (event: WebhookEvent) => void | Promise<void>;
-
-export interface WebhookHandlers {
-  [eventType: string]: WebhookEventHandler;
 }

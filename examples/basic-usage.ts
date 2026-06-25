@@ -1,27 +1,53 @@
-import { BillingKit } from "../src";
+import { BillingKit, TransactionType } from "../src";
 
 const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY ?? "sk_test_placeholder",
-  tax: {
-    enabled: true,
-    defaultRate: 18,
-    stateCode: "MH",
+  currency: "inr",
+  tax: { enabled: true, defaultRate: 18, sellerState: "MH" },
+  company: {
+    name: "Acme Corp",
+    address: "123 Business Park, Mumbai, MH",
+    email: "billing@acme.com",
   },
 });
 
-const tax = billing.calculateTax({
+// 1. GST calculation (local — no API call)
+const tax = billing.calculateGST({
   amount: 10000,
   sellerState: "MH",
   buyerState: "MH",
 });
+console.log("GST:", tax);
 
-console.log("GST breakdown:", tax);
+// 2. Generate invoice (local business logic)
+const invoice = billing.generateInvoice({
+  customer: { name: "John Doe", email: "john@example.com" },
+  billingAddress: {
+    line1: "42 MG Road",
+    city: "Mumbai",
+    state: "MH",
+    postalCode: "400001",
+    country: "IN",
+  },
+  lineItems: [{ description: "Pro Plan (monthly)", quantity: 1, unitAmount: 99900 }],
+  notes: "Thank you for your business",
+});
 
-// Uncomment with a real Stripe test key and customer ID:
-// const invoice = await billing.createInvoice({
-//   customerId: "cus_xxx",
-//   lineItems: [{ description: "Pro plan", quantity: 1, unitAmount: 99900 }],
-//   buyerState: "MH",
-// });
-// console.log("Invoice:", invoice);
+console.log("Invoice:", invoice.number, invoice.total);
+
+// 3. Generate PDF
+const pdf = await billing.generateInvoicePdf({ invoice });
+console.log("PDF size:", pdf.length, "bytes");
+
+// 4. Stripe payment (requires real test key)
+// const payment = await billing.createPayment({ amount: 99900, customerId: "cus_xxx" });
+
+// 5. Record transaction (your app should persist this to your DB)
+const txn = billing.recordTransaction({
+  type: TransactionType.PAYMENT,
+  amount: invoice.total,
+  currency: "inr",
+  referenceId: invoice.id,
+});
+console.log("Transaction:", txn.id);

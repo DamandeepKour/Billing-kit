@@ -1,1 +1,1 @@
-export { WebhookHandler } from "./WebhookHandler";
+export { WebhookService } from "./WebhookService";

@@ -1,1 +1,1 @@
-export { InvoiceService } from "./InvoiceService";
+export { InvoiceService, InvoiceNumberGenerator } from "./InvoiceService";

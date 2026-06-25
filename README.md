@@ -8,279 +8,153 @@ Install it in your backend. Call methods from your code. Done.
 npm install billing-kit
 ```
 
----
-
 ## What is this?
 
-`billing-kit` is a **library** (SDK), not a website or API server.
-
-You use it inside your own Node.js app — Express, Fastify, NestJS, or a plain script.
+A **library** you install in your Node.js backend. Not a SaaS app. Not a frontend.
 
 ```
-Your app  →  billing-kit  →  Stripe
+Your App  →  billing-kit  →  Stripe / Razorpay
 ```
 
-It handles the billing logic so you don't have to wire Stripe calls yourself every time.
+You keep your own database and users. `billing-kit` handles billing logic.
 
-**It does NOT:**
-- Start a server
-- Give you ready-made URLs like `https://billing-kit.com/api/pay`
-- Include a frontend
+## Requirements
 
-**It DOES:**
-- Create invoices
-- Calculate GST (CGST / SGST / IGST)
-- Take payments via Stripe
-- Process refunds
-- Verify Stripe webhooks
-
----
-
-## What you need
-
-1. **Node.js 18+**
-2. A **Stripe account** → [stripe.com](https://stripe.com)
-3. Your **Stripe secret key** → Dashboard → Developers → API keys  
-   Use test key first: `sk_test_...`
-4. For webhooks only: **Webhook signing secret** → Dashboard → Webhooks → `whsec_...`
-5. A **Stripe customer ID** (`cus_xxx`) when creating invoices or subscriptions
-
-Create a `.env` file:
-
-```bash
-cp .env.example .env
-```
+- Node.js 18+
+- Stripe or Razorpay account
+- API keys in environment variables
 
 ```env
-STRIPE_SECRET_KEY=sk_test_your_key_here
-STRIPE_WEBHOOK_SECRET=whsec_your_secret_here
+# Stripe
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Razorpay
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
+RAZORPAY_WEBHOOK_SECRET=...
 ```
 
-Never commit `.env` to git. It's already in `.gitignore`.
-
----
-
-## Quick start
+## Quick Start
 
 ```typescript
 import { BillingKit } from "billing-kit";
 
-// 1. Create one instance (do this once when your app starts)
 const billing = new BillingKit({
-  provider: "stripe",
+  provider: "stripe", // or "razorpay"
   secretKey: process.env.STRIPE_SECRET_KEY!,
   currency: "inr",
-  tax: {
-    enabled: true,
-    defaultRate: 18,      // 18% GST
-    stateCode: "MH",      // your business state
-  },
+  tax: { enabled: true, defaultRate: 18, sellerState: "MH" },
 });
 
-// 2. Calculate tax (runs locally — no Stripe call)
-const tax = billing.calculateTax({
+// GST (local — no API call)
+const tax = billing.calculateGST({
   amount: 10000,
   sellerState: "MH",
   buyerState: "MH",
 });
-// → totalTax: 1800, total: 11800
 
-// 3. Create an invoice (calls Stripe)
-const invoice = await billing.createInvoice({
-  customerId: "cus_xxxxxxxx",
-  lineItems: [
-    { description: "Pro plan", quantity: 1, unitAmount: 99900 },
-  ],
-  buyerState: "MH",
+// Generate invoice (local)
+const invoice = billing.generateInvoice({
+  customer: { name: "John Doe" },
+  billingAddress: {
+    line1: "42 MG Road",
+    city: "Mumbai",
+    state: "MH",
+    postalCode: "400001",
+    country: "IN",
+  },
+  lineItems: [{ description: "Pro Plan", quantity: 1, unitAmount: 99900 }],
 });
 
-// 4. Take a payment (calls Stripe)
-const payment = await billing.createPayment({
-  amount: 99900,
-  customerId: "cus_xxxxxxxx",
-});
+// PDF invoice
+const pdf = await billing.generateInvoicePdf({ invoice });
 
-// 5. Refund if needed (calls Stripe)
-await billing.refundPayment({
-  paymentId: payment.id,
-  reason: "requested_by_customer",
-});
+// Payment (calls Stripe/Razorpay)
+const payment = await billing.createPayment({ amount: 99900 });
+
+// Refund
+await billing.refundPayment({ paymentId: payment.id });
 ```
 
-**Note on amounts:** Use the smallest unit — paise for INR, cents for USD.  
-`99900` = ₹999.00
-
----
-
-## All available methods
-
-| Method | What it does |
-|--------|--------------|
-| `calculateTax()` | GST breakdown — CGST, SGST, or IGST |
-| `createInvoice()` | Create a draft invoice |
-| `getInvoice()` | Get invoice by ID |
-| `finalizeInvoice()` | Lock invoice and make it payable |
-| `createPayment()` | Create a Stripe payment |
-| `getPayment()` | Check payment status |
-| `refundPayment()` | Full or partial refund |
-| `createSubscription()` | Start a subscription |
-| `cancelSubscription()` | Cancel at end of billing period |
-| `verifyWebhook()` | Check that a Stripe webhook is real |
-| `handleWebhook()` | Run your code when events arrive |
-
----
-
-## Want REST API endpoints?
-
-`billing-kit` doesn't ship endpoints. **You** add them in your app.
-
-Think of it like this:
-
-```
-POST /api/invoices     →  billing.createInvoice(req.body)
-GET  /api/invoices/:id →  billing.getInvoice(req.params.id)
-POST /api/payments     →  billing.createPayment(req.body)
-POST /api/tax          →  billing.calculateTax(req.body)
-POST /webhooks/stripe  →  billing.verifyWebhook(body, signature)
-```
-
-### Minimal Express example
+## Razorpay Setup
 
 ```typescript
-import express from "express";
-import { BillingKit } from "billing-kit";
-
-const app = express();
-app.use(express.json());
-
 const billing = new BillingKit({
-  provider: "stripe",
-  secretKey: process.env.STRIPE_SECRET_KEY!,
-  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-  tax: { enabled: true, defaultRate: 18, stateCode: "MH" },
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
 });
-
-// Calculate GST
-app.post("/api/tax", (req, res) => {
-  res.json(billing.calculateTax(req.body));
-});
-
-// Create invoice
-app.post("/api/invoices", async (req, res) => {
-  const invoice = await billing.createInvoice(req.body);
-  res.status(201).json(invoice);
-});
-
-// Create payment
-app.post("/api/payments", async (req, res) => {
-  const payment = await billing.createPayment(req.body);
-  res.status(201).json(payment);
-});
-
-// Stripe webhook (must use raw body, not express.json)
-app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (req, res) => {
-  const sig = req.headers["stripe-signature"] as string;
-  const event = billing.verifyWebhook(req.body, sig);
-
-  await billing.handleWebhook(event, {
-    "invoice.paid": async () => {
-      // e.g. mark order as paid in your database
-    },
-  });
-
-  res.json({ received: true });
-});
-
-app.listen(3000);
 ```
 
-More examples: `examples/basic-usage.ts` and `examples/express-server.ts`
+## Public API
 
----
+| Method | Description |
+|--------|-------------|
+| `generateInvoice()` | Create invoice with totals, tax, discounts |
+| `getInvoiceSummary()` | Get invoice totals by ID |
+| `generateInvoicePdf()` | Generate PDF buffer |
+| `createPayment()` | Create payment |
+| `capturePayment()` | Capture authorized payment |
+| `cancelPayment()` | Cancel payment |
+| `getPaymentStatus()` | Check payment status |
+| `refundPayment()` | Full or partial refund |
+| `createPlan()` | Create subscription plan |
+| `createSubscription()` | Start subscription |
+| `cancelSubscription()` | Cancel subscription |
+| `renewSubscription()` | Renew subscription |
+| `calculateGST()` | India GST (CGST/SGST/IGST) |
+| `calculateVAT()` | VAT calculation |
+| `applyCoupon()` | Apply discount coupon |
+| `validateCoupon()` | Validate coupon rules |
+| `recordTransaction()` | Record billing event |
+| `getTransaction()` | Get transaction by ID |
+| `verifyWebhook()` | Verify Stripe/Razorpay webhook |
 
-## Webhooks (Stripe → your server)
+> Amounts are in smallest currency unit (paise/cents). `99900` = ₹999.00
 
-When a payment succeeds or an invoice is paid, Stripe sends an HTTP POST to your server.
+## Architecture
 
-**Setup:**
-1. Stripe Dashboard → Developers → Webhooks
-2. Add URL: `https://your-domain.com/webhooks/stripe`
-3. Pick events: `invoice.paid`, `payment_intent.succeeded`, `payment_intent.payment_failed`
-4. Copy the signing secret → put in `STRIPE_WEBHOOK_SECRET`
-5. Always call `billing.verifyWebhook()` before trusting the request
+Domain-driven, SOLID, framework-agnostic:
 
----
+- **Strategy Pattern** — `PaymentGateway` (Stripe / Razorpay)
+- **Factory Pattern** — `PaymentGatewayFactory`
+- **Facade** — `BillingKit` single entry class
 
-## GST rules (built-in)
+See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for full details.
 
-| Buyer and seller in same state | CGST + SGST (split 50/50) |
-|------------------------------|---------------------------|
-| Buyer and seller in different states | IGST only |
-
-```typescript
-// Same state (Maharashtra → Maharashtra)
-billing.calculateTax({ amount: 10000, rate: 18, sellerState: "MH", buyerState: "MH" });
-// cgst: 900, sgst: 900, igst: 0
-
-// Different states (Maharashtra → Karnataka)
-billing.calculateTax({ amount: 10000, rate: 18, sellerState: "MH", buyerState: "KA" });
-// igst: 1800, cgst: 0, sgst: 0
-```
-
----
-
-## Project layout
+## Project Structure
 
 ```
 src/
-├── BillingKit.ts     ← start here — main class
-├── invoice/          ← invoice logic
-├── payment/          ← Stripe integration
-├── tax/              ← GST calculator
-├── refund/
-├── subscription/
-├── webhook/
-└── types/            ← TypeScript types
+├── core/           # BillingKit entry
+├── invoice/        # Invoice generation
+├── payment/        # Stripe + Razorpay gateways
+├── subscription/   # Plans & subscriptions
+├── transaction/    # Event tracking
+├── refund/         # Refunds
+├── tax/            # GST & VAT
+├── coupon/         # Discounts
+├── webhook/        # Webhook verification
+├── pdf/            # PDF generation
+├── interfaces/     # PaymentGateway interface
+└── types/          # TypeScript types
 ```
-
----
 
 ## Development
 
 ```bash
-npm install       # first time only (~20s)
-npm run build     # compile to dist/
-npm test          # run tests
-```
-
----
-
-## Git
-
-```bash
-git init
-git add .
-git commit -m "Add billing-kit"
-```
-
-Safe to commit: source code, `package.json`, `README.md`  
-Never commit: `.env`, `node_modules/`, `dist/`
-
----
-
-## Publish to npm
-
-```bash
+npm install
 npm run build
 npm test
-npm publish
+npm run test:coverage
+npm run lint
 ```
 
----
+## Examples
 
-## More docs
-
-See [PACKAGE_GUIDE.md](./PACKAGE_GUIDE.md) for full architecture and API design details.
+- `examples/basic-usage.ts` — invoice, tax, PDF, transaction
 
 ## License
 

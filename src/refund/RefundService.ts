@@ -1,10 +1,10 @@
-import type { PaymentProvider } from "../payment/providers/PaymentProvider";
-import type { Refund, RefundPaymentInput } from "../types/payment";
+import type { PaymentGateway } from "../interfaces/PaymentGateway";
+import type { RefundPaymentInput, RefundResult } from "../types/payment";
 
 export class RefundService {
-  constructor(private readonly provider: PaymentProvider) {}
+  constructor(private readonly gateway: PaymentGateway) {}
 
-  refundPayment(input: RefundPaymentInput): Promise<Refund> {
-    return this.provider.refund(input);
+  refundPayment(input: RefundPaymentInput): Promise<RefundResult> {
+    return this.gateway.refundPayment(input);
   }
 }

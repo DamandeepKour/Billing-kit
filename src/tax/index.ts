@@ -1,1 +1,1 @@
-export { calculateGST } from "./GSTCalculator";
+export { TaxService, calculateGST, calculateVAT } from "./TaxService";

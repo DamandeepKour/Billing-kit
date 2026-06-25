@@ -8,10 +8,24 @@ export class BillingKitError extends Error {
   }
 }
 
-export class PaymentFailedError extends BillingKitError {
+export class InvalidConfigError extends BillingKitError {
   constructor(message: string) {
-    super(message, "PAYMENT_FAILED");
-    this.name = "PaymentFailedError";
+    super(message, "INVALID_CONFIG");
+    this.name = "InvalidConfigError";
+  }
+}
+
+export class PaymentError extends BillingKitError {
+  constructor(message: string) {
+    super(message, "PAYMENT_ERROR");
+    this.name = "PaymentError";
+  }
+}
+
+export class CouponError extends BillingKitError {
+  constructor(message: string) {
+    super(message, "COUPON_ERROR");
+    this.name = "CouponError";
   }
 }
 
@@ -22,9 +36,9 @@ export class WebhookVerificationError extends BillingKitError {
   }
 }
 
-export class InvalidConfigError extends BillingKitError {
-  constructor(message: string) {
-    super(message, "INVALID_CONFIG");
-    this.name = "InvalidConfigError";
+export class TransactionNotFoundError extends BillingKitError {
+  constructor(id: string) {
+    super(`Transaction not found: ${id}`, "TRANSACTION_NOT_FOUND");
+    this.name = "TransactionNotFoundError";
   }
 }

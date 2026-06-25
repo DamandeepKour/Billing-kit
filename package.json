@@ -1,7 +1,7 @@
 {
   "name": "billing-kit",
   "version": "1.0.0",
-  "description": "Invoicing, GST, Stripe payments, refunds, and webhooks for Node.js",
+  "description": "Production-ready billing SDK for invoices, GST/VAT, Stripe, Razorpay, refunds, and webhooks",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -12,35 +12,45 @@
       "require": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md"
-  ],
+  "files": ["dist", "README.md"],
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src tests --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "prepublishOnly": "npm run build && npm test"
   },
-  "engines": {
-    "node": ">=18"
-  },
+  "engines": { "node": ">=18" },
   "keywords": [
     "billing",
     "invoice",
     "gst",
+    "vat",
     "stripe",
+    "razorpay",
     "payments",
-    "webhooks"
+    "webhooks",
+    "pdf"
   ],
   "license": "MIT",
   "dependencies": {
+    "pdfkit": "^0.16.0",
+    "razorpay": "^2.9.6",
     "stripe": "^17.7.0"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.14",
     "@types/node": "^20.17.0",
+    "@types/pdfkit": "^0.13.9",
+    "@typescript-eslint/eslint-plugin": "^8.24.0",
+    "@typescript-eslint/parser": "^8.24.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.0.1",
+    "jest": "^29.7.0",
+    "prettier": "^3.5.0",
+    "ts-jest": "^29.2.6",
     "tsup": "^8.4.0",
-    "typescript": "^5.8.0",
-    "vitest": "^3.0.0"
+    "typescript": "^5.8.0"
   }
 }

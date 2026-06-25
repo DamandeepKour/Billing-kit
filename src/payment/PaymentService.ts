@@ -1,17 +1,26 @@
-import type { PaymentProvider } from "../payment/providers/PaymentProvider";
+import type { PaymentGateway } from "../interfaces/PaymentGateway";
 import type {
+  CapturePaymentInput,
   CreatePaymentInput,
-  Payment,
+  PaymentResult,
 } from "../types/payment";
 
 export class PaymentService {
-  constructor(private readonly provider: PaymentProvider) {}
+  constructor(private readonly gateway: PaymentGateway) {}
 
-  createPayment(input: CreatePaymentInput): Promise<Payment> {
-    return this.provider.createPayment(input);
+  createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
+    return this.gateway.createPayment(input);
   }
 
-  getPayment(paymentId: string): Promise<Payment> {
-    return this.provider.getPayment(paymentId);
+  capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
+    return this.gateway.capturePayment(input);
+  }
+
+  cancelPayment(paymentId: string): Promise<PaymentResult> {
+    return this.gateway.cancelPayment(paymentId);
+  }
+
+  getPaymentStatus(paymentId: string): Promise<PaymentResult> {
+    return this.gateway.getPaymentStatus(paymentId);
   }
 }

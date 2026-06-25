@@ -1,28 +1,69 @@
-export { BillingKit } from "./BillingKit";
+export { BillingKit } from "./core";
 
 export type {
+  Address,
+  ApplyCouponInput,
+  BillingInterval,
   BillingKitConfig,
   BillingProvider,
-  CreateInvoiceInput,
+  CapturePaymentInput,
+  CompanyDetails,
+  Coupon,
+  CouponResult,
+  CouponType,
   CreatePaymentInput,
+  CreatePlanInput,
   CreateSubscriptionInput,
+  Customer,
+  Discount,
+  GenerateInvoiceInput,
+  GeneratePdfInput,
+  GSTInput,
   Invoice,
+  InvoiceSummary,
   LineItem,
-  Payment,
-  Refund,
+  PaymentResult,
+  PaymentStatus,
+  Plan,
+  RecordTransactionInput,
   RefundPaymentInput,
+  RefundResult,
   Subscription,
   TaxBreakdown,
-  TaxCalculationInput,
+  TaxConfig,
+  Transaction,
+  UpdatePlanInput,
+  VATInput,
   WebhookEvent,
-  WebhookEventHandler,
-  WebhookHandlers,
 } from "./types";
 
-export { calculateGST } from "./tax";
+export { TransactionType } from "./types";
+
+export type { PaymentGateway } from "./interfaces";
+
 export {
   BillingKitError,
+  CouponError,
   InvalidConfigError,
-  PaymentFailedError,
+  PaymentError,
+  TransactionNotFoundError,
   WebhookVerificationError,
-} from "./utils/errors";
+} from "./utils";
+
+export {
+  TaxService,
+  calculateGST,
+  calculateVAT,
+  CouponService,
+  InvoiceService,
+  InvoiceNumberGenerator,
+  PaymentGatewayFactory,
+  PaymentManager,
+  StripeGateway,
+  RazorpayGateway,
+  RefundService,
+  SubscriptionService,
+  TransactionService,
+  WebhookService,
+  InvoicePdfGenerator,
+} from "./modules";
