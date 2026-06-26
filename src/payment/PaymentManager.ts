@@ -30,4 +30,5 @@ export class PaymentManager {
 }
 
 export { StripeGateway } from "./gateways/StripeGateway";
+
 export { RazorpayGateway } from "./gateways/RazorpayGateway";
