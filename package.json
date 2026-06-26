@@ -1,7 +1,7 @@
 {
   "name": "billing-kit",
   "version": "1.0.0",
-  "description": "Production-ready billing SDK for invoices, GST/VAT, Stripe, Razorpay, refunds, and webhooks",
+  "description": "Billing SDK for invoices, tax, Stripe, Razorpay, and webhooks",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -16,9 +16,6 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
     "test": "jest",
-    "test:unit": "jest --selectProjects unit",
-    "test:integration": "jest --selectProjects integration",
-    "test:coverage": "jest --selectProjects unit --coverage",
     "lint": "eslint src tests --ext .ts",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "prepublishOnly": "npm run build && npm test"

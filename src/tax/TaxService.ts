@@ -1,18 +1,6 @@
 import type { GSTInput, TaxBreakdown, VATInput } from "../types/tax";
 import { roundAmount } from "../utils/currency";
 
-function emptyBreakdown(amount: number): TaxBreakdown {
-  return {
-    taxableAmount: amount,
-    cgst: 0,
-    sgst: 0,
-    igst: 0,
-    vat: 0,
-    totalTax: 0,
-    total: amount,
-  };
-}
-
 export function calculateGST(input: GSTInput): TaxBreakdown {
   const { amount, sellerState, buyerState } = input;
   const rate = input.rate ?? 0;
@@ -74,14 +62,5 @@ export class TaxService {
 
   calculateVAT(input: VATInput): TaxBreakdown {
     return calculateVAT(input);
-  }
-
-  applyCustomRule(amount: number, rule: { name: string; rate: number; apply: (a: number) => number }): TaxBreakdown {
-    const totalTax = roundAmount(rule.apply(amount));
-    return {
-      ...emptyBreakdown(amount),
-      totalTax,
-      total: amount + totalTax,
-    };
   }
 }

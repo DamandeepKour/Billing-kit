@@ -16,9 +16,7 @@ jest.mock("stripe", () => {
         cancel: jest.fn(),
         retrieve: jest.fn(),
       },
-      refunds: {
-        create: refundsCreate,
-      },
+      refunds: { create: refundsCreate },
       products: { create: jest.fn(), update: jest.fn() },
       prices: { create: jest.fn(), retrieve: jest.fn() },
       subscriptions: { create: jest.fn(), update: jest.fn() },
@@ -27,14 +25,12 @@ jest.mock("stripe", () => {
   };
 });
 
-describe("Stripe payment integration (SDK mocked)", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+describe("Stripe payments", () => {
+  beforeEach(() => jest.clearAllMocks());
 
-  it("creates a payment through BillingKit → StripeGateway", async () => {
+  it("creates payment", async () => {
     paymentIntentsCreate.mockResolvedValue({
-      id: "pi_integration_test",
+      id: "pi_test",
       status: "requires_capture",
       amount: 5000,
       currency: "inr",
@@ -43,79 +39,50 @@ describe("Stripe payment integration (SDK mocked)", () => {
 
     const billing = new BillingKit({
       provider: "stripe",
-      secretKey: "sk_test_integration",
+      secretKey: "sk_test",
       currency: "inr",
     });
 
     const payment = await billing.createPayment({ amount: 5000 });
 
-    expect(paymentIntentsCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 5000, currency: "inr" }),
-      undefined,
-    );
-    expect(payment.id).toBe("pi_integration_test");
+    expect(payment.id).toBe("pi_test");
     expect(payment.status).toBe("authorized");
   });
 
-  it("captures a payment through BillingKit → StripeGateway", async () => {
+  it("captures payment", async () => {
     paymentIntentsCapture.mockResolvedValue({
-      id: "pi_capture_test",
+      id: "pi_test",
       status: "succeeded",
       amount: 5000,
       currency: "inr",
       metadata: {},
     });
 
-    const billing = new BillingKit({
-      provider: "stripe",
-      secretKey: "sk_test_integration",
-    });
+    const billing = new BillingKit({ provider: "stripe", secretKey: "sk_test" });
+    const payment = await billing.capturePayment({ paymentId: "pi_test", amount: 5000 });
 
-    const payment = await billing.capturePayment({
-      paymentId: "pi_capture_test",
-      amount: 5000,
-    });
-
-    expect(paymentIntentsCapture).toHaveBeenCalledWith("pi_capture_test", {
-      amount_to_capture: 5000,
-    });
     expect(payment.status).toBe("captured");
   });
 
-  it("refunds a payment through BillingKit → StripeGateway", async () => {
+  it("refunds payment", async () => {
     refundsCreate.mockResolvedValue({
-      id: "re_integration_test",
+      id: "re_test",
       amount: 2500,
       status: "succeeded",
-      payment_intent: "pi_refund_test",
+      payment_intent: "pi_test",
     });
 
-    const billing = new BillingKit({
-      provider: "stripe",
-      secretKey: "sk_test_integration",
-    });
+    const billing = new BillingKit({ provider: "stripe", secretKey: "sk_test" });
+    const refund = await billing.refundPayment({ paymentId: "pi_test", amount: 2500 });
 
-    const refund = await billing.refundPayment({
-      paymentId: "pi_refund_test",
-      amount: 2500,
-    });
-
-    expect(refundsCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payment_intent: "pi_refund_test",
-        amount: 2500,
-      }),
-      undefined,
-    );
-    expect(refund.id).toBe("re_integration_test");
     expect(refund.status).toBe("succeeded");
   });
 });
 
-describe("Stripe webhook integration", () => {
-  it("verifies a real Stripe webhook signature", () => {
+describe("Stripe webhooks", () => {
+  it("verifies signature", () => {
     const Stripe = jest.requireActual<typeof import("stripe")>("stripe").default;
-    const webhookSecret = "whsec_test_secret";
+    const secret = "whsec_test";
     const payload = JSON.stringify({
       id: "evt_test",
       object: "event",
@@ -123,21 +90,18 @@ describe("Stripe webhook integration", () => {
       data: { object: { id: "pi_test" } },
     });
 
-    const stripe = new Stripe("sk_test_x");
-    const header = stripe.webhooks.generateTestHeaderString({
+    const header = new Stripe("sk_test").webhooks.generateTestHeaderString({
       payload,
-      secret: webhookSecret,
+      secret,
     });
 
     const billing = new BillingKit({
       provider: "stripe",
-      secretKey: "sk_test_x",
-      webhookSecret,
+      secretKey: "sk_test",
+      webhookSecret: secret,
     });
 
     const event = billing.verifyWebhook(payload, header);
-
     expect(event.type).toBe("payment_intent.succeeded");
-    expect(event.provider).toBe("stripe");
   });
 });

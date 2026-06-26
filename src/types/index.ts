@@ -29,12 +29,7 @@ export type {
   Subscription,
   UpdatePlanInput,
 } from "./subscription";
-export type {
-  CustomTaxRule,
-  GSTInput,
-  TaxBreakdown,
-  VATInput,
-} from "./tax";
+export type { GSTInput, TaxBreakdown, VATInput } from "./tax";
 export type {
   ApplyCouponInput,
   Coupon,

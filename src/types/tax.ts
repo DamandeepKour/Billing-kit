@@ -19,9 +19,3 @@ export interface TaxBreakdown {
   totalTax: number;
   total: number;
 }
-
-export interface CustomTaxRule {
-  name: string;
-  rate: number;
-  apply: (amount: number) => number;
-}

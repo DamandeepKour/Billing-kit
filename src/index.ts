@@ -1,4 +1,4 @@
-export { BillingKit } from "./core";
+export { BillingKit } from "./core/BillingKit";
 
 export type {
   Address,
@@ -39,35 +39,23 @@ export type {
 
 export { TransactionType } from "./types";
 
-export type { PaymentGateway } from "./interfaces";
-export type { InvoiceRepository, TransactionRepository } from "./interfaces";
+export type {
+  InvoiceRepository,
+  PaymentGateway,
+  TransactionRepository,
+} from "./interfaces";
+
+export {
+  InMemoryInvoiceRepository,
+  InMemoryTransactionRepository,
+} from "./repositories";
 
 export {
   BillingKitError,
   CouponError,
   InvalidConfigError,
+  InvoiceNotFoundError,
   PaymentError,
   TransactionNotFoundError,
-  InvoiceNotFoundError,
   WebhookVerificationError,
-} from "./utils";
-
-export {
-  TaxService,
-  calculateGST,
-  calculateVAT,
-  CouponService,
-  InvoiceService,
-  InvoiceNumberGenerator,
-  PaymentGatewayFactory,
-  PaymentManager,
-  StripeGateway,
-  RazorpayGateway,
-  RefundService,
-  SubscriptionService,
-  TransactionService,
-  WebhookService,
-  InvoicePdfGenerator,
-  InMemoryInvoiceRepository,
-  InMemoryTransactionRepository,
-} from "./modules";
+} from "./utils/errors";
