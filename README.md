@@ -54,8 +54,8 @@ const tax = billing.calculateGST({
   buyerState: "MH",
 });
 
-// Generate invoice (local)
-const invoice = billing.generateInvoice({
+// Generate invoice (persisted via repository)
+const invoice = await billing.generateInvoice({
   customer: { name: "John Doe" },
   billingAddress: {
     line1: "42 MG Road",
@@ -76,6 +76,38 @@ const payment = await billing.createPayment({ amount: 99900 });
 // Refund
 await billing.refundPayment({ paymentId: payment.id });
 ```
+
+## Pluggable Storage (Repositories)
+
+By default, invoices and transactions use in-memory storage. For production, inject your own repository:
+
+```typescript
+import {
+  BillingKit,
+  type InvoiceRepository,
+  type TransactionRepository,
+} from "billing-kit";
+
+class PostgresInvoiceRepository implements InvoiceRepository {
+  async save(invoice) {
+    // await db.invoices.insert(invoice);
+    return invoice;
+  }
+  async findById(id) {
+    // return await db.invoices.findById(id);
+    return null;
+  }
+}
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  invoiceRepository: new PostgresInvoiceRepository(),
+  transactionRepository: new MyTransactionRepository(),
+});
+```
+
+Shipped defaults: `InMemoryInvoiceRepository`, `InMemoryTransactionRepository`.
 
 ## Razorpay Setup
 
@@ -147,10 +179,13 @@ src/
 ```bash
 npm install
 npm run build
-npm test
+npm run test:unit
+npm run test:integration
 npm run test:coverage
 npm run lint
 ```
+
+CI runs on GitHub Actions for Node 18 and 20 (lint, build, unit + integration tests).
 
 ## Examples
 

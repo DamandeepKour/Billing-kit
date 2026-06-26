@@ -1,3 +1,4 @@
+import type { TransactionRepository } from "../interfaces/TransactionRepository";
 import type {
   RecordTransactionInput,
   Transaction,
@@ -6,28 +7,23 @@ import { TransactionNotFoundError } from "../utils/errors";
 import { generateId } from "../utils/id";
 
 export class TransactionService {
-  private readonly store = new Map<string, Transaction>();
+  constructor(private readonly repository: TransactionRepository) {}
 
-  recordTransaction(input: RecordTransactionInput): Transaction {
+  async recordTransaction(input: RecordTransactionInput): Promise<Transaction> {
     const transaction: Transaction = {
       id: generateId("txn"),
       ...input,
       createdAt: new Date(),
     };
 
-    this.store.set(transaction.id, transaction);
-    return transaction;
+    return this.repository.save(transaction);
   }
 
-  getTransaction(id: string): Transaction {
-    const transaction = this.store.get(id);
+  async getTransaction(id: string): Promise<Transaction> {
+    const transaction = await this.repository.findById(id);
     if (!transaction) {
       throw new TransactionNotFoundError(id);
     }
     return transaction;
-  }
-
-  listTransactions(): Transaction[] {
-    return Array.from(this.store.values());
   }
 }

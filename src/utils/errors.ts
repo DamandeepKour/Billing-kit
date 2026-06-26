@@ -42,3 +42,10 @@ export class TransactionNotFoundError extends BillingKitError {
     this.name = "TransactionNotFoundError";
   }
 }
+
+export class InvoiceNotFoundError extends BillingKitError {
+  constructor(id: string) {
+    super(`Invoice not found: ${id}`, "INVOICE_NOT_FOUND");
+    this.name = "InvoiceNotFoundError";
+  }
+}

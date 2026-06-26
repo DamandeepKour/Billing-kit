@@ -1,3 +1,6 @@
+import type { InvoiceRepository } from "../interfaces/InvoiceRepository";
+import type { TransactionRepository } from "../interfaces/TransactionRepository";
+
 export type BillingProvider = "stripe" | "razorpay";
 
 export interface CompanyDetails {
@@ -23,4 +26,6 @@ export interface BillingKitConfig {
   currency?: string;
   company?: CompanyDetails;
   tax?: TaxConfig;
+  invoiceRepository?: InvoiceRepository;
+  transactionRepository?: TransactionRepository;
 }

@@ -1,12 +1,13 @@
+import { InMemoryTransactionRepository } from "../src/repositories";
 import { TransactionService } from "../src/transaction";
 import { TransactionType } from "../src/types/transaction";
 import { TransactionNotFoundError } from "../src/utils/errors";
 
 describe("TransactionService", () => {
-  const service = new TransactionService();
+  const service = new TransactionService(new InMemoryTransactionRepository());
 
-  it("records and retrieves a transaction", () => {
-    const txn = service.recordTransaction({
+  it("records and retrieves a transaction", async () => {
+    const txn = await service.recordTransaction({
       type: TransactionType.PAYMENT,
       amount: 5000,
       currency: "inr",
@@ -14,10 +15,12 @@ describe("TransactionService", () => {
     });
 
     expect(txn.id).toMatch(/^txn_/);
-    expect(service.getTransaction(txn.id).referenceId).toBe("pay_123");
+    expect((await service.getTransaction(txn.id)).referenceId).toBe("pay_123");
   });
 
-  it("throws when transaction not found", () => {
-    expect(() => service.getTransaction("missing")).toThrow(TransactionNotFoundError);
+  it("throws when transaction not found", async () => {
+    await expect(service.getTransaction("missing")).rejects.toThrow(
+      TransactionNotFoundError,
+    );
   });
 });

@@ -1,9 +1,11 @@
 /** @type {import('jest').Config} */
-module.exports = {
+const baseConfig = {
   preset: "ts-jest",
   testEnvironment: "node",
-  roots: ["<rootDir>/tests"],
-  testMatch: ["**/*.test.ts"],
+};
+
+module.exports = {
+  ...baseConfig,
   collectCoverageFrom: [
     "src/**/*.ts",
     "!src/index.ts",
@@ -19,4 +21,17 @@ module.exports = {
       statements: 80,
     },
   },
+  projects: [
+    {
+      ...baseConfig,
+      displayName: "unit",
+      testMatch: ["<rootDir>/tests/**/*.test.ts"],
+      testPathIgnorePatterns: ["<rootDir>/tests/integration/"],
+    },
+    {
+      ...baseConfig,
+      displayName: "integration",
+      testMatch: ["<rootDir>/tests/integration/**/*.test.ts"],
+    },
+  ],
 };

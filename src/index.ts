@@ -40,6 +40,7 @@ export type {
 export { TransactionType } from "./types";
 
 export type { PaymentGateway } from "./interfaces";
+export type { InvoiceRepository, TransactionRepository } from "./interfaces";
 
 export {
   BillingKitError,
@@ -47,6 +48,7 @@ export {
   InvalidConfigError,
   PaymentError,
   TransactionNotFoundError,
+  InvoiceNotFoundError,
   WebhookVerificationError,
 } from "./utils";
 
@@ -66,4 +68,6 @@ export {
   TransactionService,
   WebhookService,
   InvoicePdfGenerator,
+  InMemoryInvoiceRepository,
+  InMemoryTransactionRepository,
 } from "./modules";

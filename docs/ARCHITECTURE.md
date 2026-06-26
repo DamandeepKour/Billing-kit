@@ -33,6 +33,34 @@ src/
 | **Facade** | `BillingKit` | One class for consumers |
 | **Strategy** | `PaymentGateway` | Swap Stripe / Razorpay |
 | **Factory** | `PaymentGatewayFactory` | Create gateway from config |
+| **Repository** | `InvoiceRepository`, `TransactionRepository` | Pluggable persistence |
+
+## Pluggable Storage
+
+Consumers inject their own repositories. Defaults are in-memory.
+
+```typescript
+interface InvoiceRepository {
+  save(invoice: Invoice): Promise<Invoice>;
+  findById(id: string): Promise<Invoice | null>;
+}
+
+interface TransactionRepository {
+  save(transaction: Transaction): Promise<Transaction>;
+  findById(id: string): Promise<Transaction | null>;
+}
+```
+
+Shipped defaults: `InMemoryInvoiceRepository`, `InMemoryTransactionRepository`.
+
+```typescript
+new BillingKit({
+  provider: "stripe",
+  secretKey: "...",
+  invoiceRepository: new MyPostgresInvoiceRepository(),
+  transactionRepository: new MyPostgresTransactionRepository(),
+});
+```
 
 ## Data Flow
 

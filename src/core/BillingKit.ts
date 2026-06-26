@@ -30,6 +30,10 @@ import { CouponService } from "../coupon";
 import { InvoiceService } from "../invoice";
 import { InvoicePdfGenerator } from "../pdf";
 import { PaymentManager, PaymentService } from "../payment";
+import {
+  InMemoryInvoiceRepository,
+  InMemoryTransactionRepository,
+} from "../repositories";
 import { RefundService } from "../refund";
 import { SubscriptionService } from "../subscription";
 import { TaxService } from "../tax";
@@ -63,26 +67,35 @@ export class BillingKit {
       ...config,
     };
 
+    const invoiceRepository =
+      this.config.invoiceRepository ?? new InMemoryInvoiceRepository();
+    const transactionRepository =
+      this.config.transactionRepository ?? new InMemoryTransactionRepository();
+
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
 
-    this.invoiceService = new InvoiceService(this.config);
+    this.invoiceService = new InvoiceService(this.config, invoiceRepository);
     this.paymentService = new PaymentService(gateway);
     this.refundService = new RefundService(gateway);
     this.subscriptionService = new SubscriptionService(gateway);
     this.taxService = new TaxService();
     this.couponService = new CouponService();
-    this.transactionService = new TransactionService();
+    this.transactionService = new TransactionService(transactionRepository);
     this.webhookService = new WebhookService(gateway);
     this.pdfGenerator = new InvoicePdfGenerator(this.config);
   }
 
-  generateInvoice(input: GenerateInvoiceInput): Invoice {
+  generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
     return this.invoiceService.generateInvoice(input);
   }
 
-  getInvoiceSummary(invoiceId: string): InvoiceSummary {
+  getInvoiceSummary(invoiceId: string): Promise<InvoiceSummary> {
     return this.invoiceService.getInvoiceSummary(invoiceId);
+  }
+
+  getInvoice(invoiceId: string): Promise<Invoice | null> {
+    return this.invoiceService.getInvoice(invoiceId);
   }
 
   generateInvoicePdf(input: GeneratePdfInput): Promise<Buffer> {
@@ -150,11 +163,11 @@ export class BillingKit {
     this.couponService.validateCoupon(coupon, amount);
   }
 
-  recordTransaction(input: RecordTransactionInput): Transaction {
+  recordTransaction(input: RecordTransactionInput): Promise<Transaction> {
     return this.transactionService.recordTransaction(input);
   }
 
-  getTransaction(id: string): Transaction {
+  getTransaction(id: string): Promise<Transaction> {
     return this.transactionService.getTransaction(id);
   }
 

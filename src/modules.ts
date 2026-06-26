@@ -12,3 +12,7 @@ export { SubscriptionService } from "./subscription";
 export { TransactionService } from "./transaction";
 export { WebhookService } from "./webhook";
 export { InvoicePdfGenerator } from "./pdf";
+export {
+  InMemoryInvoiceRepository,
+  InMemoryTransactionRepository,
+} from "./repositories";

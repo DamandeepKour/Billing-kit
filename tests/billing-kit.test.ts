@@ -26,8 +26,8 @@ describe("BillingKit", () => {
     expect(tax.totalTax).toBe(1800);
   });
 
-  it("generates invoice end-to-end", () => {
-    const invoice = billing.generateInvoice({
+  it("generates invoice end-to-end", async () => {
+    const invoice = await billing.generateInvoice({
       customer: { name: "Jane" },
       billingAddress: {
         line1: "A",
@@ -39,14 +39,15 @@ describe("BillingKit", () => {
       lineItems: [{ description: "Item", quantity: 1, unitAmount: 10000 }],
     });
 
-    expect(billing.getInvoiceSummary(invoice.id).total).toBe(invoice.total);
+    const summary = await billing.getInvoiceSummary(invoice.id);
+    expect(summary.total).toBe(invoice.total);
   });
 });
 
 describe("InvoicePdfGenerator", () => {
   it("generates a PDF buffer", async () => {
     const billing = new BillingKit(config);
-    const invoice = billing.generateInvoice({
+    const invoice = await billing.generateInvoice({
       customer: { name: "Jane" },
       billingAddress: {
         line1: "A",

@@ -1,3 +1,4 @@
+import type { InvoiceRepository } from "../interfaces/InvoiceRepository";
 import type { BillingKitConfig } from "../types/config";
 import type {
   Discount,
@@ -7,6 +8,7 @@ import type {
   LineItem,
 } from "../types/invoice";
 import { TaxService } from "../tax/TaxService";
+import { InvoiceNotFoundError } from "../utils/errors";
 import { generateId } from "../utils/id";
 import { normalizeCurrency, roundAmount } from "../utils/currency";
 
@@ -50,11 +52,13 @@ function applyDiscounts(subtotal: number, discounts: Discount[] = []): number {
 export class InvoiceService {
   private readonly taxService = new TaxService();
   private readonly numberGenerator = new InvoiceNumberGenerator();
-  private readonly invoices = new Map<string, Invoice>();
 
-  constructor(private readonly config: BillingKitConfig) {}
+  constructor(
+    private readonly config: BillingKitConfig,
+    private readonly repository: InvoiceRepository,
+  ) {}
 
-  generateInvoice(input: GenerateInvoiceInput): Invoice {
+  async generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
     const currency = normalizeCurrency(input.currency ?? this.config.currency);
     const subtotal = sumLineItems(input.lineItems);
     const discountTotal = applyDiscounts(subtotal, input.discounts);
@@ -101,14 +105,13 @@ export class InvoiceService {
       createdAt: new Date(),
     };
 
-    this.invoices.set(invoice.id, invoice);
-    return invoice;
+    return this.repository.save(invoice);
   }
 
-  getInvoiceSummary(invoiceId: string): InvoiceSummary {
-    const invoice = this.invoices.get(invoiceId);
+  async getInvoiceSummary(invoiceId: string): Promise<InvoiceSummary> {
+    const invoice = await this.repository.findById(invoiceId);
     if (!invoice) {
-      throw new Error(`Invoice not found: ${invoiceId}`);
+      throw new InvoiceNotFoundError(invoiceId);
     }
 
     return {
@@ -121,7 +124,7 @@ export class InvoiceService {
     };
   }
 
-  getInvoice(invoiceId: string): Invoice | undefined {
-    return this.invoices.get(invoiceId);
+  async getInvoice(invoiceId: string): Promise<Invoice | null> {
+    return this.repository.findById(invoiceId);
   }
 }

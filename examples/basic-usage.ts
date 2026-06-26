@@ -10,6 +10,9 @@ const billing = new BillingKit({
     address: "123 Business Park, Mumbai, MH",
     email: "billing@acme.com",
   },
+  // Optional: plug in your own repositories (Postgres, Mongo, Redis, etc.)
+  // invoiceRepository: new MyPostgresInvoiceRepository(),
+  // transactionRepository: new MyPostgresTransactionRepository(),
 });
 
 // 1. GST calculation (local — no API call)
@@ -20,8 +23,8 @@ const tax = billing.calculateGST({
 });
 console.log("GST:", tax);
 
-// 2. Generate invoice (local business logic)
-const invoice = billing.generateInvoice({
+// 2. Generate invoice (persisted via repository)
+const invoice = await billing.generateInvoice({
   customer: { name: "John Doe", email: "john@example.com" },
   billingAddress: {
     line1: "42 MG Road",
@@ -43,8 +46,8 @@ console.log("PDF size:", pdf.length, "bytes");
 // 4. Stripe payment (requires real test key)
 // const payment = await billing.createPayment({ amount: 99900, customerId: "cus_xxx" });
 
-// 5. Record transaction (your app should persist this to your DB)
-const txn = billing.recordTransaction({
+// 5. Record transaction (persisted via repository)
+const txn = await billing.recordTransaction({
   type: TransactionType.PAYMENT,
   amount: invoice.total,
   currency: "inr",
