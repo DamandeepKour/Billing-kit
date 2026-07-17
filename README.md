@@ -74,6 +74,73 @@ await billing.refundPayment({ paymentId: payment.id });
 
 Amounts are in the smallest currency unit (paise / cents). `99900` = ₹999.00.
 
+## Subscriptions
+
+Create a plan, subscribe a customer, then cancel or renew. Recurring charges and invoice.paid events usually arrive via webhooks — see [Webhook verification](#webhook-verification).
+
+```typescript
+// Plan (monthly | quarterly | yearly)
+const plan = await billing.createPlan({
+  name: "Pro Monthly",
+  amount: 99900,
+  interval: "monthly",
+  description: "Pro plan billed every month",
+});
+
+// Subscribe
+const subscription = await billing.createSubscription({
+  customerId: "cus_xxx", // Stripe Customer / Razorpay customer id
+  planId: plan.id,
+  trialDays: 14,
+});
+
+// Cancel at period end
+const cancelled = await billing.cancelSubscription(subscription.id);
+// cancelled.cancelAtPeriodEnd === true
+
+// Resume billing (clear cancel-at-period-end)
+const renewed = await billing.renewSubscription(subscription.id);
+// renewed.cancelAtPeriodEnd === false
+```
+
+| Method | Behavior |
+|--------|----------|
+| `createPlan` | Creates a recurring price/plan on the selected provider |
+| `createSubscription` | Starts billing for a customer on that plan |
+| `cancelSubscription` | Schedules cancel at period end |
+| `renewSubscription` | Clears cancel-at-period-end so billing continues |
+
+Full flow: [`examples/subscriptions.ts`](./examples/subscriptions.ts)
+
+## Invoices
+
+Generate local invoices (with tax/discounts), retrieve them, and export PDF. Provider invoice events (`invoice.paid`) are handled in webhook examples.
+
+```typescript
+const invoice = await billing.generateInvoice({
+  customer: { name: "John Doe", email: "john@example.com" },
+  billingAddress: {
+    line1: "42 MG Road",
+    city: "Mumbai",
+    state: "MH",
+    postalCode: "400001",
+    country: "IN",
+  },
+  lineItems: [{ description: "Pro Plan", quantity: 1, unitAmount: 99900 }],
+});
+
+const summary = await billing.getInvoiceSummary(invoice.id);
+const stored = await billing.getInvoice(invoice.id);
+const pdf = await billing.generateInvoicePdf({ invoice });
+```
+
+| Method | Returns |
+|--------|---------|
+| `generateInvoice` | Full `Invoice` (persisted via repository) |
+| `getInvoice` | `Invoice \| null` by id |
+| `getInvoiceSummary` | Totals only (`subtotal`, `tax`, `total`, …) |
+| `generateInvoicePdf` | `Buffer` (PDF) |
+
 ## Tax support
 
 | Method | Use |
@@ -126,11 +193,12 @@ const event = billing.verifyWebhook(
 
 | Provider | Header | Common events |
 |----------|--------|----------------|
-| Stripe | `Stripe-Signature` | `payment_intent.succeeded`, `invoice.paid`, `customer.subscription.updated`, `charge.refunded` |
-| Razorpay | `X-Razorpay-Signature` | `payment.captured`, `refund.processed`, `subscription.activated`, `invoice.paid` |
+| Stripe | `Stripe-Signature` | `payment_intent.succeeded`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded` |
+| Razorpay | `X-Razorpay-Signature` | `payment.captured`, `refund.processed`, `subscription.activated`, `subscription.charged`, `subscription.cancelled`, `invoice.paid` |
 
 Example handlers: [`examples/stripe-webhooks.ts`](./examples/stripe-webhooks.ts), [`examples/razorpay-webhooks.ts`](./examples/razorpay-webhooks.ts)
 
+Wire subscription lifecycle with webhooks — e.g. on `invoice.paid` / `subscription.charged` grant access; on `customer.subscription.deleted` / `subscription.cancelled` revoke it.
 ## Storage adapters
 
 Invoices and transactions use repositories. Defaults are in-memory; swap them for Postgres, Mongo, Redis, etc.
