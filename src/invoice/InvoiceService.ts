@@ -68,16 +68,11 @@ export class InvoiceService {
       input.sellerState ?? this.config.tax?.sellerState ?? "";
     const buyerState = input.billingAddress.state;
     const taxRate = input.taxRate ?? this.config.tax?.defaultRate ?? 0;
+    const taxMode = input.taxMode ?? (this.config.tax?.enabled ? "gst" : "none");
 
-    const tax =
-      this.config.tax?.enabled && taxRate > 0 && sellerState
-        ? this.taxService.calculateGST({
-            amount: taxableAmount,
-            rate: taxRate,
-            sellerState,
-            buyerState,
-          })
-        : {
+    let tax =
+      taxMode === "none" || taxRate <= 0
+        ? {
             taxableAmount,
             cgst: 0,
             sgst: 0,
@@ -85,7 +80,25 @@ export class InvoiceService {
             vat: 0,
             totalTax: 0,
             total: taxableAmount,
-          };
+          }
+        : taxMode === "vat"
+          ? this.taxService.calculateVAT({ amount: taxableAmount, rate: taxRate })
+          : sellerState
+            ? this.taxService.calculateGST({
+                amount: taxableAmount,
+                rate: taxRate,
+                sellerState,
+                buyerState,
+              })
+            : {
+                taxableAmount,
+                cgst: 0,
+                sgst: 0,
+                igst: 0,
+                vat: 0,
+                totalTax: 0,
+                total: taxableAmount,
+              };
 
     const invoice: Invoice = {
       id: generateId("inv"),

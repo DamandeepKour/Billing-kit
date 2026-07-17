@@ -114,54 +114,125 @@ Full flow: [`examples/subscriptions.ts`](./examples/subscriptions.ts)
 
 ## Invoices
 
-Generate local invoices (with tax/discounts), retrieve them, and export PDF. Provider invoice events (`invoice.paid`) are handled in webhook examples.
+Generate tax invoices with GSTIN / VAT IDs, custom or auto numbering, retrieve them, and download PDFs.
 
 ```typescript
-const invoice = await billing.generateInvoice({
-  customer: { name: "John Doe", email: "john@example.com" },
+// Intra-state (MH → MH) → CGST + SGST
+const intra = await billing.generateInvoice({
+  invoiceNumber: "INV-2026-MH-00042", // optional; else INV-YYYY-00001
+  taxMode: "gst",
+  taxRate: 18,
+  sellerState: "MH",
+  customer: {
+    name: "Local Retailer",
+    email: "buyer@example.com",
+    gstin: "27AAAAA0000A1Z5",
+  },
   billingAddress: {
-    line1: "42 MG Road",
+    line1: "10 Linking Road",
     city: "Mumbai",
     state: "MH",
-    postalCode: "400001",
+    postalCode: "400050",
     country: "IN",
   },
-  lineItems: [{ description: "Pro Plan", quantity: 1, unitAmount: 99900 }],
+  lineItems: [
+    {
+      description: "Cloud hosting",
+      quantity: 1,
+      unitAmount: 100000,
+      hsnOrSac: "998315",
+    },
+  ],
+});
+// intra.tax → { cgst, sgst, igst: 0, totalTax, total }
+
+// Inter-state (MH → KA) → IGST
+const inter = await billing.generateInvoice({
+  taxMode: "gst",
+  taxRate: 18,
+  sellerState: "MH",
+  customer: { name: "KA Buyer", gstin: "29BBBBB0000B1Z5" },
+  billingAddress: {
+    line1: "88 Indiranagar",
+    city: "Bengaluru",
+    state: "KA",
+    postalCode: "560038",
+    country: "IN",
+  },
+  lineItems: [{ description: "API credits", quantity: 1, unitAmount: 100000 }],
+});
+// inter.tax → { igst, cgst: 0, sgst: 0 }
+
+// VAT invoice
+const vatInvoice = await billing.generateInvoice({
+  taxMode: "vat",
+  taxRate: 20,
+  currency: "eur",
+  customer: { name: "Berlin GmbH", vatNumber: "DE123456789" },
+  billingAddress: {
+    line1: "Friedrichstr. 1",
+    city: "Berlin",
+    state: "BE",
+    postalCode: "10117",
+    country: "DE",
+  },
+  lineItems: [{ description: "SaaS license", quantity: 1, unitAmount: 100000 }],
 });
 
-const summary = await billing.getInvoiceSummary(invoice.id);
-const stored = await billing.getInvoice(invoice.id);
-const pdf = await billing.generateInvoicePdf({ invoice });
+const summary = await billing.getInvoiceSummary(intra.id);
+const stored = await billing.getInvoice(intra.id);
+
+// Downloadable PDF (Buffer → file or HTTP response)
+const pdf = await billing.generateInvoicePdf({ invoice: intra });
+// fs.writeFileSync(`./tmp/${intra.number}.pdf`, pdf);
+// res.setHeader("Content-Type", "application/pdf");
+// res.setHeader("Content-Disposition", `attachment; filename="${intra.number}.pdf"`);
+// res.send(pdf);
 ```
 
-| Method | Returns |
-|--------|---------|
-| `generateInvoice` | Full `Invoice` (persisted via repository) |
-| `getInvoice` | `Invoice \| null` by id |
-| `getInvoiceSummary` | Totals only (`subtotal`, `tax`, `total`, …) |
-| `generateInvoicePdf` | `Buffer` (PDF) |
+| Field / method | Purpose |
+|----------------|---------|
+| `invoiceNumber` | Custom number; omit for `INV-YYYY-#####` |
+| `customer.gstin` / `customer.vatNumber` | Printed on PDF |
+| `company.gstin` / `company.taxId` | Seller tax ID on PDF |
+| `lineItems[].hsnOrSac` | HSN / SAC column on PDF |
+| `taxMode` | `"gst"` \| `"vat"` \| `"none"` |
+| `getInvoice` / `getInvoiceSummary` | Retrieve by id |
+| `generateInvoicePdf` | Returns `Buffer` |
+
+Full samples (writes PDFs to `./tmp/`): [`examples/invoices-tax-pdf.ts`](./examples/invoices-tax-pdf.ts)
 
 ## Tax support
 
 | Method | Use |
 |--------|-----|
 | `calculateGST()` | India GST — same state → CGST + SGST; different state → IGST |
-| `calculateVAT()` | Flat VAT rate |
+| `calculateVAT()` | Single VAT rate |
 
 ```typescript
-// Same state
-billing.calculateGST({ amount: 10000, rate: 18, sellerState: "MH", buyerState: "MH" });
-// → cgst: 900, sgst: 900, igst: 0, total: 11800
+// Intra-state (seller MH, buyer MH)
+billing.calculateGST({
+  amount: 100000,
+  rate: 18,
+  sellerState: "MH",
+  buyerState: "MH",
+});
+// → cgst: 9000, sgst: 9000, igst: 0, totalTax: 18000, total: 118000
 
-// Inter-state
-billing.calculateGST({ amount: 10000, rate: 18, sellerState: "MH", buyerState: "KA" });
-// → igst: 1800, cgst: 0, sgst: 0, total: 11800
+// Inter-state (seller MH, buyer KA)
+billing.calculateGST({
+  amount: 100000,
+  rate: 18,
+  sellerState: "MH",
+  buyerState: "KA",
+});
+// → igst: 18000, cgst: 0, sgst: 0, total: 118000
 
-billing.calculateVAT({ amount: 10000, rate: 20 });
-// → vat: 2000, total: 12000
+billing.calculateVAT({ amount: 100000, rate: 20 });
+// → vat: 20000, total: 120000
 ```
 
-Enable tax on invoices via config (`tax.enabled`, `tax.defaultRate`, `tax.sellerState`) or per-invoice `taxRate` / `sellerState`.
+On invoices, set `taxMode: "gst"` or `"vat"` plus `taxRate` / `sellerState`. Config defaults: `tax.enabled`, `tax.defaultRate`, `tax.sellerState`.
 
 ## Webhook verification
 

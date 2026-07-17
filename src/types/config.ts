@@ -8,7 +8,10 @@ export interface CompanyDetails {
   address: string;
   email?: string;
   phone?: string;
+  /** GSTIN / VAT / Tax ID printed on invoices */
   taxId?: string;
+  gstin?: string;
+  vatNumber?: string;
   logoUrl?: string;
 }
 

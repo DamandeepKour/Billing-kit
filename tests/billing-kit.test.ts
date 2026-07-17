@@ -1,5 +1,4 @@
 import { BillingKit } from "../src/core/BillingKit";
-import { InvoicePdfGenerator } from "../src/pdf";
 
 const config = {
   provider: "stripe" as const,
@@ -45,10 +44,17 @@ describe("BillingKit", () => {
 });
 
 describe("InvoicePdfGenerator", () => {
-  it("generates a PDF buffer", async () => {
-    const billing = new BillingKit(config);
+  it("generates a PDF buffer with GSTIN fields", async () => {
+    const billing = new BillingKit({
+      ...config,
+      company: {
+        name: "Acme Corp",
+        address: "123 Business Park, Mumbai",
+        gstin: "27AABCU9603R1ZM",
+      },
+    });
     const invoice = await billing.generateInvoice({
-      customer: { name: "Jane" },
+      customer: { name: "Jane", gstin: "27AAAAA0000A1Z5" },
       billingAddress: {
         line1: "A",
         city: "Mumbai",
@@ -56,11 +62,12 @@ describe("InvoicePdfGenerator", () => {
         postalCode: "400001",
         country: "IN",
       },
-      lineItems: [{ description: "Item", quantity: 1, unitAmount: 10000 }],
+      lineItems: [
+        { description: "Item", quantity: 1, unitAmount: 10000, hsnOrSac: "998315" },
+      ],
     });
 
-    const generator = new InvoicePdfGenerator(config);
-    const pdf = await generator.generateInvoicePdf({ invoice });
+    const pdf = await billing.generateInvoicePdf({ invoice });
 
     expect(Buffer.isBuffer(pdf)).toBe(true);
     expect(pdf.length).toBeGreaterThan(100);

@@ -21,6 +21,7 @@ export type {
   GSTInput,
   Invoice,
   InvoiceSummary,
+  InvoiceTaxMode,
   LineItem,
   PaymentResult,
   PaymentStatus,

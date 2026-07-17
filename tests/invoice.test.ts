@@ -47,4 +47,47 @@ describe("InvoiceService", () => {
 
     expect(invoice.discountTotal).toBe(9990);
   });
+
+  it("uses custom invoice number and customer GSTIN", async () => {
+    const invoice = await service.generateInvoice({
+      ...baseInput,
+      invoiceNumber: "INV-2026-MH-00042",
+      customer: {
+        name: "Retailer",
+        gstin: "27AAAAA0000A1Z5",
+      },
+    });
+
+    expect(invoice.number).toBe("INV-2026-MH-00042");
+    expect(invoice.customer.gstin).toBe("27AAAAA0000A1Z5");
+  });
+
+  it("applies IGST for inter-state invoices", async () => {
+    const invoice = await service.generateInvoice({
+      ...baseInput,
+      taxMode: "gst",
+      sellerState: "MH",
+      billingAddress: {
+        ...baseInput.billingAddress,
+        state: "KA",
+        city: "Bengaluru",
+      },
+    });
+
+    expect(invoice.tax.igst).toBeGreaterThan(0);
+    expect(invoice.tax.cgst).toBe(0);
+    expect(invoice.tax.sgst).toBe(0);
+  });
+
+  it("applies VAT when taxMode is vat", async () => {
+    const invoice = await service.generateInvoice({
+      ...baseInput,
+      taxMode: "vat",
+      taxRate: 20,
+      customer: { name: "EU Buyer", vatNumber: "DE123456789" },
+    });
+
+    expect(invoice.tax.vat).toBeGreaterThan(0);
+    expect(invoice.customer.vatNumber).toBe("DE123456789");
+  });
 });

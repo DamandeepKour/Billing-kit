@@ -26,14 +26,20 @@ export class InvoicePdfGenerator {
       doc.on("error", reject);
 
       if (company) {
-        doc.fontSize(20).text(company.name, { align: "left" });
+        doc.fontSize(18).text(company.name, { align: "left" });
         doc.fontSize(10).text(company.address);
         if (company.email) doc.text(company.email);
-        if (company.taxId) doc.text(`Tax ID: ${company.taxId}`);
+        if (company.phone) doc.text(company.phone);
+        const sellerTax =
+          company.gstin ?? company.taxId ?? company.vatNumber;
+        if (sellerTax) {
+          const label = company.gstin || company.taxId ? "GSTIN" : "VAT";
+          doc.text(`${label}: ${sellerTax}`);
+        }
         doc.moveDown();
       }
 
-      doc.fontSize(16).text("INVOICE", { align: "right" });
+      doc.fontSize(16).text("TAX INVOICE", { align: "right" });
       doc.fontSize(10).text(`Invoice #: ${invoice.number}`, { align: "right" });
       doc.text(`Date: ${invoice.createdAt.toISOString().split("T")[0]}`, {
         align: "right",
@@ -43,16 +49,23 @@ export class InvoicePdfGenerator {
       doc.fontSize(12).text("Bill To:");
       doc.fontSize(10).text(invoice.customer.name);
       if (invoice.customer.email) doc.text(invoice.customer.email);
+      if (invoice.customer.phone) doc.text(invoice.customer.phone);
+      if (invoice.customer.gstin) doc.text(`GSTIN: ${invoice.customer.gstin}`);
+      if (invoice.customer.vatNumber) {
+        doc.text(`VAT: ${invoice.customer.vatNumber}`);
+      }
       doc.text(invoice.billingAddress.line1);
       if (invoice.billingAddress.line2) doc.text(invoice.billingAddress.line2);
       doc.text(
         `${invoice.billingAddress.city}, ${invoice.billingAddress.state} ${invoice.billingAddress.postalCode}`,
       );
+      doc.text(`Place of supply: ${invoice.billingAddress.state}`);
       doc.moveDown();
 
       const tableTop = doc.y;
       doc.fontSize(10).text("Description", 50, tableTop);
-      doc.text("Qty", 280, tableTop);
+      doc.text("HSN/SAC", 220, tableTop);
+      doc.text("Qty", 290, tableTop);
       doc.text("Unit", 330, tableTop);
       doc.text("Amount", 420, tableTop);
       doc.moveDown(0.5);
@@ -60,12 +73,14 @@ export class InvoicePdfGenerator {
       doc.moveDown(0.5);
 
       for (const item of invoice.lineItems) {
+        const y = doc.y;
         const lineTotal = item.quantity * item.unitAmount;
-        doc.text(item.description, 50);
-        doc.text(String(item.quantity), 280);
-        doc.text(formatAmount(item.unitAmount, invoice.currency), 330);
-        doc.text(formatAmount(lineTotal, invoice.currency), 420);
-        doc.moveDown(0.5);
+        doc.text(item.description, 50, y, { width: 160 });
+        doc.text(item.hsnOrSac ?? "—", 220, y);
+        doc.text(String(item.quantity), 290, y);
+        doc.text(formatAmount(item.unitAmount, invoice.currency), 330, y);
+        doc.text(formatAmount(lineTotal, invoice.currency), 420, y);
+        doc.moveDown(0.8);
       }
 
       doc.moveDown();
@@ -102,7 +117,7 @@ export class InvoicePdfGenerator {
       }
 
       doc.fontSize(12).text(
-        `Total: ${formatAmount(invoice.total, invoice.currency)}`,
+        `Grand Total: ${formatAmount(invoice.total, invoice.currency)}`,
         { align: "right" },
       );
 

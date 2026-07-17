@@ -11,6 +11,7 @@ export type {
   GenerateInvoiceInput,
   Invoice,
   InvoiceSummary,
+  InvoiceTaxMode,
   LineItem,
 } from "./invoice";
 export type {
