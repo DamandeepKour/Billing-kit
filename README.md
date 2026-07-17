@@ -73,6 +73,25 @@ const billing = new BillingKit({
 
 Defaults: `InMemoryInvoiceRepository`, `InMemoryTransactionRepository`.
 
+## Webhooks
+
+Verify the signature, then branch on `event.type`. Use the **raw request body**.
+
+```typescript
+// Stripe — header: Stripe-Signature
+const event = billing.verifyWebhook(req.body, req.headers["stripe-signature"]);
+
+// Razorpay — header: X-Razorpay-Signature
+const event = billing.verifyWebhook(req.body, req.headers["x-razorpay-signature"]);
+```
+
+| Provider | Common events |
+|----------|----------------|
+| Stripe | `payment_intent.succeeded`, `invoice.paid`, `customer.subscription.updated`, `charge.refunded` |
+| Razorpay | `payment.captured`, `refund.processed`, `subscription.activated`, `invoice.paid` |
+
+Full handlers: `examples/stripe-webhooks.ts`, `examples/razorpay-webhooks.ts`
+
 ## Scripts
 
 ```bash
