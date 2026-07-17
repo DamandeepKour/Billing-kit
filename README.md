@@ -1,21 +1,48 @@
 # billing-kit
 
-Node.js billing SDK — invoices, GST/VAT, Stripe, Razorpay, refunds, webhooks, PDF.
+Node.js billing SDK for invoices, tax, payments, refunds, subscriptions, webhooks, and PDF generation.
 
 ```bash
 npm install billing-kit
 ```
 
-## Setup
+## Features
+
+- Invoice generation with line items, discounts, tax, and PDF export
+- Payments — create, capture, cancel, status
+- Refunds — full and partial
+- Subscriptions — plans, create, cancel, renew (monthly / quarterly / yearly)
+- Webhooks — signature verification for Stripe and Razorpay
+- Tax — GST (CGST / SGST / IGST) and VAT
+- Coupons — percentage and flat discounts
+- Transactions — record payment, refund, subscription, renewal, chargeback events
+- Pluggable storage — inject your own invoice / transaction repositories
+
+## Supported providers
+
+| Provider | Config | Notes |
+|----------|--------|--------|
+| **Stripe** | `provider: "stripe"`, `secretKey` | PaymentIntents, invoices, subscriptions, refunds, webhooks |
+| **Razorpay** | `provider: "razorpay"`, `keyId`, `secretKey` | Orders, captures, plans, subscriptions, refunds, webhooks |
 
 ```typescript
 import { BillingKit } from "billing-kit";
 
-const billing = new BillingKit({
+// Stripe
+const stripe = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
+  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
   currency: "inr",
   tax: { enabled: true, defaultRate: 18, sellerState: "MH" },
+});
+
+// Razorpay
+const razorpay = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
 });
 ```
 
@@ -45,52 +72,143 @@ const payment = await billing.createPayment({ amount: invoice.total });
 await billing.refundPayment({ paymentId: payment.id });
 ```
 
-Amounts are in smallest currency unit (paise/cents). `99900` = ₹999.00.
+Amounts are in the smallest currency unit (paise / cents). `99900` = ₹999.00.
 
-## Razorpay
+## Tax support
+
+| Method | Use |
+|--------|-----|
+| `calculateGST()` | India GST — same state → CGST + SGST; different state → IGST |
+| `calculateVAT()` | Flat VAT rate |
 
 ```typescript
-const billing = new BillingKit({
-  provider: "razorpay",
-  keyId: process.env.RAZORPAY_KEY_ID!,
-  secretKey: process.env.RAZORPAY_KEY_SECRET!,
-  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
-});
+// Same state
+billing.calculateGST({ amount: 10000, rate: 18, sellerState: "MH", buyerState: "MH" });
+// → cgst: 900, sgst: 900, igst: 0, total: 11800
+
+// Inter-state
+billing.calculateGST({ amount: 10000, rate: 18, sellerState: "MH", buyerState: "KA" });
+// → igst: 1800, cgst: 0, sgst: 0, total: 11800
+
+billing.calculateVAT({ amount: 10000, rate: 20 });
+// → vat: 2000, total: 12000
 ```
 
-## Custom storage
+Enable tax on invoices via config (`tax.enabled`, `tax.defaultRate`, `tax.sellerState`) or per-invoice `taxRate` / `sellerState`.
 
-Pass your own repositories for invoices and transactions:
+## Webhook verification
+
+Always verify with the **raw request body**. Do not parse JSON before verification.
 
 ```typescript
+import { BillingKit, WebhookVerificationError } from "billing-kit";
+
+// Stripe — header: Stripe-Signature
+try {
+  const event = billing.verifyWebhook(
+    req.body,
+    req.headers["stripe-signature"] as string,
+  );
+  // event.type, event.id, event.data, event.provider
+} catch (err) {
+  if (err instanceof WebhookVerificationError) {
+    // invalid signature — return 400
+  }
+  throw err;
+}
+
+// Razorpay — header: X-Razorpay-Signature
+const event = billing.verifyWebhook(
+  req.body,
+  req.headers["x-razorpay-signature"] as string,
+);
+```
+
+| Provider | Header | Common events |
+|----------|--------|----------------|
+| Stripe | `Stripe-Signature` | `payment_intent.succeeded`, `invoice.paid`, `customer.subscription.updated`, `charge.refunded` |
+| Razorpay | `X-Razorpay-Signature` | `payment.captured`, `refund.processed`, `subscription.activated`, `invoice.paid` |
+
+Example handlers: [`examples/stripe-webhooks.ts`](./examples/stripe-webhooks.ts), [`examples/razorpay-webhooks.ts`](./examples/razorpay-webhooks.ts)
+
+## Storage adapters
+
+Invoices and transactions use repositories. Defaults are in-memory; swap them for Postgres, Mongo, Redis, etc.
+
+```typescript
+import type { InvoiceRepository, TransactionRepository } from "billing-kit";
+
+class PostgresInvoiceRepository implements InvoiceRepository {
+  async save(invoice) {
+    // INSERT / UPSERT
+    return invoice;
+  }
+  async findById(id) {
+    // SELECT
+    return null;
+  }
+}
+
 const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
-  invoiceRepository: myInvoiceRepo,
+  invoiceRepository: new PostgresInvoiceRepository(),
   transactionRepository: myTransactionRepo,
 });
 ```
 
-Defaults: `InMemoryInvoiceRepository`, `InMemoryTransactionRepository`.
+| Interface | Methods | Default |
+|-----------|---------|---------|
+| `InvoiceRepository` | `save`, `findById` | `InMemoryInvoiceRepository` |
+| `TransactionRepository` | `save`, `findById` | `InMemoryTransactionRepository` |
 
-## Webhooks
+## Error handling
 
-Verify the signature, then branch on `event.type`. Use the **raw request body**.
+All SDK errors extend `BillingKitError` and expose a `code` string.
 
 ```typescript
-// Stripe — header: Stripe-Signature
-const event = billing.verifyWebhook(req.body, req.headers["stripe-signature"]);
+import {
+  BillingKitError,
+  InvalidConfigError,
+  InvoiceNotFoundError,
+  TransactionNotFoundError,
+  WebhookVerificationError,
+  CouponError,
+  PaymentError,
+} from "billing-kit";
 
-// Razorpay — header: X-Razorpay-Signature
-const event = billing.verifyWebhook(req.body, req.headers["x-razorpay-signature"]);
+try {
+  await billing.getInvoiceSummary(id);
+} catch (err) {
+  if (err instanceof InvoiceNotFoundError) {
+    // 404
+  } else if (err instanceof BillingKitError) {
+    console.error(err.code, err.message);
+  }
+}
 ```
 
-| Provider | Common events |
-|----------|----------------|
-| Stripe | `payment_intent.succeeded`, `invoice.paid`, `customer.subscription.updated`, `charge.refunded` |
-| Razorpay | `payment.captured`, `refund.processed`, `subscription.activated`, `invoice.paid` |
+| Error | Code |
+|-------|------|
+| `InvalidConfigError` | `INVALID_CONFIG` |
+| `PaymentError` | `PAYMENT_ERROR` |
+| `CouponError` | `COUPON_ERROR` |
+| `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` |
+| `InvoiceNotFoundError` | `INVOICE_NOT_FOUND` |
+| `TransactionNotFoundError` | `TRANSACTION_NOT_FOUND` |
 
-Full handlers: `examples/stripe-webhooks.ts`, `examples/razorpay-webhooks.ts`
+## API overview
+
+| Area | Methods |
+|------|---------|
+| Invoice | `generateInvoice`, `getInvoiceSummary`, `getInvoice`, `generateInvoicePdf` |
+| Payment | `createPayment`, `capturePayment`, `cancelPayment`, `getPaymentStatus` |
+| Refund | `refundPayment` |
+| Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `cancelSubscription`, `renewSubscription` |
+| Tax | `calculateGST`, `calculateVAT` |
+| Coupon | `applyCoupon`, `validateCoupon` |
+| Transaction | `recordTransaction`, `getTransaction` |
+| Webhook | `verifyWebhook` |
 
 ## Scripts
 
