@@ -110,7 +110,7 @@ const renewed = await billing.renewSubscription(subscription.id);
 | `cancelSubscription` | Schedules cancel at period end |
 | `renewSubscription` | Clears cancel-at-period-end so billing continues |
 
-Full flow: [`examples/subscriptions.ts`](./examples/subscriptions.ts)
+Full flow: [`examples/stripe/subscriptions.ts`](./examples/stripe/subscriptions.ts), [`examples/razorpay/subscriptions.ts`](./examples/razorpay/subscriptions.ts)
 
 ## Invoices
 
@@ -267,7 +267,7 @@ const event = billing.verifyWebhook(
 | Stripe | `Stripe-Signature` | `payment_intent.succeeded`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded` |
 | Razorpay | `X-Razorpay-Signature` | `payment.captured`, `refund.processed`, `subscription.activated`, `subscription.charged`, `subscription.cancelled`, `invoice.paid` |
 
-Example handlers: [`examples/stripe-webhooks.ts`](./examples/stripe-webhooks.ts), [`examples/razorpay-webhooks.ts`](./examples/razorpay-webhooks.ts)
+Example handlers: [`examples/stripe/webhooks.ts`](./examples/stripe/webhooks.ts), [`examples/razorpay/webhooks.ts`](./examples/razorpay/webhooks.ts)
 
 Wire subscription lifecycle with webhooks — e.g. on `invoice.paid` / `subscription.charged` grant access; on `customer.subscription.deleted` / `subscription.cancelled` revoke it.
 ## Storage adapters
@@ -348,6 +348,32 @@ try {
 | Coupon | `applyCoupon`, `validateCoupon` |
 | Transaction | `recordTransaction`, `getTransaction` |
 | Webhook | `verifyWebhook` |
+
+## Examples
+
+| Path | Description |
+|------|-------------|
+| [`examples/basic-usage.ts`](./examples/basic-usage.ts) | Quick start — tax, invoice, PDF |
+| [`examples/invoices-tax-pdf.ts`](./examples/invoices-tax-pdf.ts) | Intra/inter-state GST, VAT, numbering, PDF files |
+| [`examples/stripe/`](./examples/stripe/) | Payments, subscriptions, webhooks |
+| [`examples/razorpay/`](./examples/razorpay/) | Payments, subscriptions, webhooks |
+
+See [`examples/README.md`](./examples/README.md) for the full layout.
+
+## Roadmap
+
+| Status | Item |
+|--------|------|
+| Done | Stripe + Razorpay payments, refunds, subscriptions |
+| Done | GST / VAT, invoices, PDF, webhooks |
+| Done | Pluggable invoice / transaction repositories |
+| Next | Idempotency store interface for payments and refunds |
+| Next | Zod (or similar) runtime validation on public inputs |
+| Next | Webhook event registry / typed handlers on `BillingKit` |
+| Next | Subpath exports (`billing-kit/tax`, `billing-kit/invoice`) |
+| Later | Additional gateways (PayPal, Cashfree) |
+| Later | Proration helpers for mid-cycle plan changes |
+| Later | Usage / metered billing calculators |
 
 ## Scripts
 
