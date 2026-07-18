@@ -128,6 +128,8 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
         amount: intent.amount,
         currency: intent.currency,
         provider: this.name,
+        presentmentCurrency: intent.currency,
+        presentmentAmount: intent.amount,
         metadata: (intent.metadata as Record<string, string>) ?? undefined,
       };
     });

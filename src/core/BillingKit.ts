@@ -46,6 +46,7 @@ import type {
   RecordTransactionInput,
   Transaction,
 } from "../types/transaction";
+import type { ReportingFilter } from "../types/settlement";
 import type { WebhookEvent } from "../types/webhook";
 import { CouponService } from "../coupon";
 import { InvoiceService } from "../invoice";
@@ -267,6 +268,16 @@ export class BillingKit {
 
   getTransaction(id: string): Promise<Transaction> {
     return this.transactionService.getTransaction(id);
+  }
+
+  /** Revenue totals grouped by presentment and settlement currency. */
+  getRevenueByCurrency(filter?: ReportingFilter) {
+    return this.transactionService.getRevenueByCurrency(filter);
+  }
+
+  /** Settlement summary: gross, fees, tax on fee, net by currency. */
+  getSettlementSummary(filter?: ReportingFilter) {
+    return this.transactionService.getSettlementSummary(filter);
   }
 
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {

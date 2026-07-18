@@ -116,6 +116,8 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
       amount: order.amount,
       currency: order.currency,
       provider: this.name,
+      presentmentCurrency: order.currency,
+      presentmentAmount: order.amount,
       metadata: order.notes,
     };
   }

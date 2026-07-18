@@ -17,7 +17,7 @@ npm install billing-kit
 - Coupons — percentage and flat discounts
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
-- Multi-currency — `inr`, `usd`, `eur`, `gbp`, `aed`, `sgd` at config, customer, invoice, and payment level
+- Multi-currency — presentment vs settlement, FX metadata, fee/net reporting (`inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`)
 
 ## Supported providers
 
@@ -141,6 +141,61 @@ await razorpay.createPayment({ amount: 99900, currency: "inr" });
 ```
 
 Line items that set `currency` must match the invoice currency, or `CurrencyMismatchError` is thrown.
+
+### Presentment vs settlement (global billing)
+
+Stripe distinguishes the **presentment** currency (what the customer pays) from the **settlement** currency (what lands in your balance). Record both on transactions, plus fee breakdown and FX metadata:
+
+```typescript
+import {
+  BillingKit,
+  TransactionType,
+  calculateFeeBreakdown,
+} from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  currency: "usd",
+});
+
+// Customer paid €50.00; settled to USD balance after Stripe fees
+const fees = calculateFeeBreakdown({
+  gross: 5200, // $52.00 settlement gross
+  fee: 181,
+  taxOnFee: 0,
+});
+
+await billing.recordTransaction({
+  type: TransactionType.PAYMENT,
+  amount: 5000,
+  currency: "eur",
+  presentmentCurrency: "eur",
+  presentmentAmount: 5000,
+  settlementCurrency: "usd",
+  settlementAmount: fees.net,
+  exchangeRate: {
+    rate: 1.04,
+    source: "stripe",
+    asOf: new Date().toISOString(),
+  },
+  fees,
+  providerResponse: {
+    balance_transaction: "txn_xxx",
+    exchange_rate: 1.04,
+  },
+  referenceId: "pi_xxx",
+});
+
+// Reporting
+const revenue = await billing.getRevenueByCurrency();
+// revenue.byPresentmentCurrency / revenue.bySettlementCurrency
+
+const settlement = await billing.getSettlementSummary();
+// settlement.bySettlementCurrency[].netSettlement, feeTotal, taxOnFeeTotal
+```
+
+Invoices accept the same optional fields (`presentmentCurrency`, `settlementCurrency`, `exchangeRate`, `fees`, `providerResponse`).
 
 ## Subscriptions
 
@@ -589,7 +644,7 @@ const billing = new BillingKit({
 | Interface | Methods | Default |
 |-----------|---------|---------|
 | `InvoiceRepository` | `save`, `findById` | `InMemoryInvoiceRepository` |
-| `TransactionRepository` | `save`, `findById` | `InMemoryTransactionRepository` |
+| `TransactionRepository` | `save`, `findById`, `list` | `InMemoryTransactionRepository` |
 
 ## Error handling
 
@@ -646,7 +701,7 @@ try {
 | Stripe billing | `pauseSubscription`, `resumeSubscription`, `retrieveSubscription`, `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `applyCoupon`, `validateCoupon` |
-| Transaction | `recordTransaction`, `getTransaction` |
+| Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Webhook | `verifyWebhook` |
 
 ## Examples
@@ -671,6 +726,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Multi-currency (INR, USD, EUR, GBP, AED, SGD) |
 | Done | Stripe customers, pause/resume, hosted invoices, metered usage |
 | Done | Razorpay orders, payment signature, fetch helpers, normalized webhooks |
+| Done | Presentment/settlement currencies, fee breakdown, revenue reporting |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

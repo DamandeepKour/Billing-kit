@@ -1,3 +1,5 @@
+import type { ExchangeRateMetadata, FeeBreakdown } from "./settlement";
+
 export type PaymentStatus = "pending" | "authorized" | "captured" | "failed" | "cancelled";
 
 export interface CreatePaymentInput {
@@ -8,6 +10,10 @@ export interface CreatePaymentInput {
   description?: string;
   metadata?: Record<string, string>;
   idempotencyKey?: string;
+  /** Currency the customer will pay in (defaults to `currency`) */
+  presentmentCurrency?: string;
+  /** Expected settlement currency when known */
+  settlementCurrency?: string;
 }
 
 export interface CapturePaymentInput {
@@ -22,6 +28,15 @@ export interface PaymentResult {
   currency: string;
   provider: string;
   metadata?: Record<string, string>;
+  /** Currency charged to the customer */
+  presentmentCurrency?: string;
+  /** Currency settled to your balance */
+  settlementCurrency?: string;
+  presentmentAmount?: number;
+  settlementAmount?: number;
+  exchangeRate?: ExchangeRateMetadata;
+  fees?: FeeBreakdown;
+  providerResponse?: Record<string, unknown>;
 }
 
 export interface RefundPaymentInput {
@@ -37,4 +52,8 @@ export interface RefundResult {
   amount: number;
   status: "pending" | "succeeded" | "failed";
   provider: string;
+  presentmentCurrency?: string;
+  settlementCurrency?: string;
+  fees?: FeeBreakdown;
+  providerResponse?: Record<string, unknown>;
 }

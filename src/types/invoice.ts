@@ -1,4 +1,5 @@
 import type { TaxBreakdown } from "./tax";
+import type { ExchangeRateMetadata, FeeBreakdown } from "./settlement";
 
 export interface Address {
   line1: string;
@@ -68,6 +69,13 @@ export interface GenerateInvoiceInput {
   currency?: string;
   /** Custom number; otherwise auto: INV-YYYY-00001 */
   invoiceNumber?: string;
+  /** Currency shown / charged to the customer (defaults to `currency`) */
+  presentmentCurrency?: string;
+  /** Currency you settle in when different from presentment */
+  settlementCurrency?: string;
+  exchangeRate?: ExchangeRateMetadata;
+  fees?: FeeBreakdown;
+  providerResponse?: Record<string, unknown>;
 }
 
 export interface InvoiceSummary {
@@ -77,6 +85,8 @@ export interface InvoiceSummary {
   tax: TaxBreakdown;
   total: number;
   currency: string;
+  presentmentCurrency?: string;
+  settlementCurrency?: string;
 }
 
 export interface Invoice extends InvoiceSummary {
@@ -89,4 +99,9 @@ export interface Invoice extends InvoiceSummary {
   discounts: Discount[];
   notes?: string;
   createdAt: Date;
+  presentmentAmount?: number;
+  settlementAmount?: number;
+  exchangeRate?: ExchangeRateMetadata;
+  fees?: FeeBreakdown;
+  providerResponse?: Record<string, unknown>;
 }

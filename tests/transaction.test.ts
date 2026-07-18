@@ -15,6 +15,8 @@ describe("TransactionService", () => {
     });
 
     expect(txn.id).toMatch(/^txn_/);
+    expect(txn.presentmentCurrency).toBe("inr");
+    expect(txn.settlementCurrency).toBe("inr");
     expect((await service.getTransaction(txn.id)).referenceId).toBe("pay_123");
   });
 

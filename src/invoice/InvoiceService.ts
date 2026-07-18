@@ -136,6 +136,13 @@ export class InvoiceService {
             autoTax: autoTax || (taxEnabled && !taxType),
           });
 
+    const presentmentCurrency = normalizeCurrency(
+      input.presentmentCurrency ?? currency,
+    );
+    const settlementCurrency = normalizeCurrency(
+      input.settlementCurrency ?? presentmentCurrency,
+    );
+
     const invoice: Invoice = {
       id: generateId("inv"),
       number: input.invoiceNumber ?? this.numberGenerator.generate(),
@@ -151,6 +158,13 @@ export class InvoiceService {
       tax,
       total: tax.total,
       currency,
+      presentmentCurrency,
+      settlementCurrency,
+      presentmentAmount: tax.total,
+      settlementAmount: input.fees?.net ?? tax.total,
+      exchangeRate: input.exchangeRate,
+      fees: input.fees,
+      providerResponse: input.providerResponse,
       createdAt: new Date(),
     };
 
@@ -170,6 +184,8 @@ export class InvoiceService {
       tax: invoice.tax,
       total: invoice.total,
       currency: invoice.currency,
+      presentmentCurrency: invoice.presentmentCurrency,
+      settlementCurrency: invoice.settlementCurrency,
     };
   }
 

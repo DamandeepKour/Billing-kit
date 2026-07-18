@@ -72,6 +72,16 @@ export type {
   CouponResult,
   CouponType,
 } from "./coupon";
-export { TransactionType } from "./transaction";
+export { TransactionType, TransactionStatus } from "./transaction";
 export type { RecordTransactionInput, Transaction } from "./transaction";
+export type {
+  ExchangeRateMetadata,
+  FeeBreakdown,
+  PresentmentCurrency,
+  ReportingFilter,
+  RevenueByCurrencyRow,
+  SettlementCurrency,
+  SettlementFields,
+  SettlementSummary,
+} from "./settlement";
 export type { GeneratePdfInput } from "./pdf";

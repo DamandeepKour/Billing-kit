@@ -41,9 +41,15 @@ export type {
   RecordTransactionInput,
   RefundPaymentInput,
   RefundResult,
+  ReportingFilter,
   ReportUsageInput,
+  RevenueByCurrencyRow,
   SalesTaxInput,
   SetDefaultPaymentMethodInput,
+  SettlementFields,
+  SettlementSummary,
+  ExchangeRateMetadata,
+  FeeBreakdown,
   Subscription,
   TaxBreakdown,
   TaxCalculationInput,
@@ -61,7 +67,11 @@ export type {
   WebhookEvent,
 } from "./types";
 
-export { RAZORPAY_WEBHOOK_EVENTS, TransactionType } from "./types";
+export {
+  RAZORPAY_WEBHOOK_EVENTS,
+  TransactionStatus,
+  TransactionType,
+} from "./types";
 
 export type {
   InvoiceRepository,
@@ -109,6 +119,11 @@ export {
 } from "./utils/currency";
 
 export type { SupportedCurrency } from "./utils/currency";
+
+export {
+  calculateFeeBreakdown,
+  normalizeSettlementFields,
+} from "./utils/settlement";
 
 export {
   TaxEngine,
