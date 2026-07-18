@@ -17,6 +17,7 @@ npm install billing-kit
 - Coupons — percentage and flat discounts
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
+- Multi-currency — `inr`, `usd`, `eur`, `gbp`, `aed`, `sgd` at config, customer, invoice, and payment level
 
 ## Supported providers
 
@@ -73,6 +74,73 @@ await billing.refundPayment({ paymentId: payment.id });
 ```
 
 Amounts are in the smallest currency unit (paise / cents). `99900` = ₹999.00.
+
+## Multi-currency
+
+Supported ISO codes: `inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`.
+
+Resolution order for invoices and payments:
+
+1. Explicit `currency` on the call
+2. `customer.defaultCurrency` (invoices)
+3. Global `BillingKit` config `currency`
+4. Fallback: `inr`
+
+```typescript
+import {
+  BillingKit,
+  formatAmount,
+  toMinorUnits,
+  convertSmallestUnit,
+} from "billing-kit";
+
+// Global default
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  currency: "usd",
+});
+
+// Helpers
+toMinorUnits(49, "usd");        // 4900
+convertSmallestUnit(4900, "usd"); // 49
+formatAmount(4900, "usd");      // "$49.00"
+
+// Invoice override (Stripe multi-currency invoices)
+const usdInvoice = await billing.generateInvoice({
+  currency: "usd",
+  customer: { name: "Acme Inc", defaultCurrency: "usd" },
+  billingAddress: {
+    line1: "1 Market St",
+    city: "San Francisco",
+    state: "CA",
+    postalCode: "94105",
+    country: "US",
+  },
+  lineItems: [
+    { description: "Pro Plan", quantity: 1, unitAmount: 4900, currency: "usd" },
+  ],
+});
+
+// Payment in a different currency
+const payment = await billing.createPayment({
+  amount: toMinorUnits(999, "inr"),
+  currency: "inr",
+  customerId: "cus_xxx",
+});
+
+// Razorpay (same API — currency on config or payment)
+const razorpay = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  currency: "inr",
+});
+
+await razorpay.createPayment({ amount: 99900, currency: "inr" });
+```
+
+Line items that set `currency` must match the invoice currency, or `CurrencyMismatchError` is thrown.
 
 ## Subscriptions
 
@@ -314,6 +382,8 @@ import {
   WebhookVerificationError,
   CouponError,
   PaymentError,
+  CurrencyMismatchError,
+  UnsupportedCurrencyError,
 } from "billing-kit";
 
 try {
@@ -333,6 +403,8 @@ try {
 | `PaymentError` | `PAYMENT_ERROR` |
 | `CouponError` | `COUPON_ERROR` |
 | `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` |
+| `CurrencyMismatchError` | `CURRENCY_MISMATCH` |
+| `UnsupportedCurrencyError` | `UNSUPPORTED_CURRENCY` |
 | `InvoiceNotFoundError` | `INVOICE_NOT_FOUND` |
 | `TransactionNotFoundError` | `TRANSACTION_NOT_FOUND` |
 
@@ -367,6 +439,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Stripe + Razorpay payments, refunds, subscriptions |
 | Done | GST / VAT, invoices, PDF, webhooks |
 | Done | Pluggable invoice / transaction repositories |
+| Done | Multi-currency (INR, USD, EUR, GBP, AED, SGD) |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

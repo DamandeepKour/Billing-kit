@@ -4,12 +4,21 @@ import type {
   CreatePaymentInput,
   PaymentResult,
 } from "../types/payment";
+import { resolveCurrency } from "../utils/currency";
 
 export class PaymentService {
-  constructor(private readonly gateway: PaymentGateway) {}
+  constructor(
+    private readonly gateway: PaymentGateway,
+    private readonly defaultCurrency?: string,
+  ) {}
 
   createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
-    return this.gateway.createPayment(input);
+    const currency = resolveCurrency({
+      override: input.currency,
+      configDefault: this.defaultCurrency,
+    });
+
+    return this.gateway.createPayment({ ...input, currency });
   }
 
   capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {

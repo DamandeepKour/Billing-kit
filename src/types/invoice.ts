@@ -14,6 +14,8 @@ export interface Customer {
   name: string;
   email?: string;
   phone?: string;
+  /** Prefer this currency when invoice/payment currency is omitted */
+  defaultCurrency?: string;
   /** India GST identification number */
   gstin?: string;
   /** EU / other VAT registration number */
@@ -25,6 +27,8 @@ export interface LineItem {
   quantity: number;
   unitAmount: number;
   taxRate?: number;
+  /** Must match invoice currency when set */
+  currency?: string;
   /** HSN / SAC code for GST invoices */
   hsnOrSac?: string;
 }

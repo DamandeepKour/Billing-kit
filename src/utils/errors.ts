@@ -49,3 +49,20 @@ export class InvoiceNotFoundError extends BillingKitError {
     this.name = "InvoiceNotFoundError";
   }
 }
+
+export class CurrencyMismatchError extends BillingKitError {
+  constructor(message: string) {
+    super(message, "CURRENCY_MISMATCH");
+    this.name = "CurrencyMismatchError";
+  }
+}
+
+export class UnsupportedCurrencyError extends BillingKitError {
+  constructor(currency: string, supported: string[]) {
+    super(
+      `Unsupported currency "${currency}". Supported: ${supported.join(", ")}`,
+      "UNSUPPORTED_CURRENCY",
+    );
+    this.name = "UnsupportedCurrencyError";
+  }
+}

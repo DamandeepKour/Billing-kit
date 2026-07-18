@@ -76,7 +76,7 @@ export class BillingKit {
     const gateway = paymentManager.getGateway();
 
     this.invoiceService = new InvoiceService(this.config, invoiceRepository);
-    this.paymentService = new PaymentService(gateway);
+    this.paymentService = new PaymentService(gateway, this.config.currency);
     this.refundService = new RefundService(gateway);
     this.subscriptionService = new SubscriptionService(gateway);
     this.taxService = new TaxService();

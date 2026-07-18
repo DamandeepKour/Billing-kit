@@ -8,9 +8,16 @@ import type {
   LineItem,
 } from "../types/invoice";
 import { TaxService } from "../tax/TaxService";
-import { InvoiceNotFoundError } from "../utils/errors";
+import {
+  CurrencyMismatchError,
+  InvoiceNotFoundError,
+} from "../utils/errors";
 import { generateId } from "../utils/id";
-import { normalizeCurrency, roundAmount } from "../utils/currency";
+import {
+  normalizeCurrency,
+  resolveCurrency,
+  roundAmount,
+} from "../utils/currency";
 
 export class InvoiceNumberGenerator {
   private counter = 0;
@@ -49,6 +56,20 @@ function applyDiscounts(subtotal: number, discounts: Discount[] = []): number {
   return total;
 }
 
+function assertLineItemCurrencyConsistency(
+  lineItems: LineItem[],
+  invoiceCurrency: string,
+): void {
+  for (const item of lineItems) {
+    if (!item.currency) continue;
+    if (normalizeCurrency(item.currency) !== invoiceCurrency) {
+      throw new CurrencyMismatchError(
+        `Line item currency "${item.currency}" does not match invoice currency "${invoiceCurrency}"`,
+      );
+    }
+  }
+}
+
 export class InvoiceService {
   private readonly taxService = new TaxService();
   private readonly numberGenerator = new InvoiceNumberGenerator();
@@ -59,7 +80,14 @@ export class InvoiceService {
   ) {}
 
   async generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
-    const currency = normalizeCurrency(input.currency ?? this.config.currency);
+    const currency = resolveCurrency({
+      override: input.currency,
+      customerDefault: input.customer.defaultCurrency,
+      configDefault: this.config.currency,
+    });
+
+    assertLineItemCurrencyConsistency(input.lineItems, currency);
+
     const subtotal = sumLineItems(input.lineItems);
     const discountTotal = applyDiscounts(subtotal, input.discounts);
     const taxableAmount = subtotal - discountTotal;
@@ -70,7 +98,7 @@ export class InvoiceService {
     const taxRate = input.taxRate ?? this.config.tax?.defaultRate ?? 0;
     const taxMode = input.taxMode ?? (this.config.tax?.enabled ? "gst" : "none");
 
-    let tax =
+    const tax =
       taxMode === "none" || taxRate <= 0
         ? {
             taxableAmount,

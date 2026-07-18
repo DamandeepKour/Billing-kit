@@ -1,14 +1,7 @@
 import PDFDocument from "pdfkit";
 import type { BillingKitConfig } from "../types/config";
 import type { GeneratePdfInput } from "../types/pdf";
-
-function formatAmount(amount: number, currency: string): string {
-  const value = amount / 100;
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: currency.toUpperCase(),
-  }).format(value);
-}
+import { formatAmount } from "../utils/currency";
 
 export class InvoicePdfGenerator {
   constructor(private readonly config: BillingKitConfig) {}
@@ -41,6 +34,7 @@ export class InvoicePdfGenerator {
 
       doc.fontSize(16).text("TAX INVOICE", { align: "right" });
       doc.fontSize(10).text(`Invoice #: ${invoice.number}`, { align: "right" });
+      doc.text(`Currency: ${invoice.currency.toUpperCase()}`, { align: "right" });
       doc.text(`Date: ${invoice.createdAt.toISOString().split("T")[0]}`, {
         align: "right",
       });

@@ -54,9 +54,25 @@ export {
 export {
   BillingKitError,
   CouponError,
+  CurrencyMismatchError,
   InvalidConfigError,
   InvoiceNotFoundError,
   PaymentError,
   TransactionNotFoundError,
+  UnsupportedCurrencyError,
   WebhookVerificationError,
 } from "./utils/errors";
+
+export {
+  SUPPORTED_CURRENCIES,
+  assertSupportedCurrency,
+  convertSmallestUnit,
+  formatAmount,
+  fromMinorUnits,
+  isSupportedCurrency,
+  normalizeCurrency,
+  resolveCurrency,
+  toMinorUnits,
+} from "./utils/currency";
+
+export type { SupportedCurrency } from "./utils/currency";
