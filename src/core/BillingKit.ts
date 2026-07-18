@@ -12,6 +12,11 @@ import type {
   RefundPaymentInput,
   RefundResult,
 } from "../types/payment";
+import type {
+  CreateOrderInput,
+  OrderResult,
+  VerifyPaymentSignatureInput,
+} from "../types/order";
 import type { GeneratePdfInput } from "../types/pdf";
 import type {
   AttachPaymentMethodInput,
@@ -120,6 +125,26 @@ export class BillingKit {
 
   createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
     return this.paymentService.createPayment(input);
+  }
+
+  /** Razorpay only — create an Order (preferred before Checkout). */
+  createOrder(input: CreateOrderInput): Promise<OrderResult> {
+    return this.paymentService.createOrder(input);
+  }
+
+  /** Razorpay only — verify Checkout payment signature. */
+  verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean {
+    return this.paymentService.verifyPaymentSignature(input);
+  }
+
+  /** Razorpay only — fetch payment by id. */
+  fetchPayment(paymentId: string): Promise<PaymentResult> {
+    return this.paymentService.fetchPayment(paymentId);
+  }
+
+  /** Razorpay only — fetch refund by id. */
+  fetchRefund(refundId: string): Promise<RefundResult> {
+    return this.paymentService.fetchRefund(refundId);
   }
 
   capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {

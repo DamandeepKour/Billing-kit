@@ -12,7 +12,7 @@ npm install billing-kit
 - Payments — create, capture, cancel, status
 - Refunds — full and partial
 - Subscriptions — plans, create, cancel, renew, pause / resume (Stripe); monthly / quarterly / yearly + metered
-- Webhooks — signature verification for Stripe and Razorpay
+- Webhooks — raw-body signature verification + normalized event types (Stripe / Razorpay)
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
 - Coupons — percentage and flat discounts
 - Transactions — record payment, refund, subscription, renewal, chargeback events
@@ -24,7 +24,7 @@ npm install billing-kit
 | Provider | Config | Notes |
 |----------|--------|--------|
 | **Stripe** | `provider: "stripe"`, `secretKey` | PaymentIntents, Prices/subscriptions, customers, hosted invoices, metered usage, refunds, webhooks |
-| **Razorpay** | `provider: "razorpay"`, `keyId`, `secretKey` | Orders, captures, plans, subscriptions, refunds, webhooks |
+| **Razorpay** | `provider: "razorpay"`, `keyId`, `secretKey` | Orders, payment signature, captures, plans, subscriptions, refunds, raw-body webhooks |
 
 ```typescript
 import { BillingKit } from "billing-kit";
@@ -448,18 +448,76 @@ Helpers: `calculateGST()`, `calculateVAT()`, `calculateTax()`.
 
 ## Webhook verification
 
-Always verify with the **raw request body**. Do not parse JSON before verification.
+Always verify with the **raw request body**. Do not `JSON.parse` or otherwise transform the body before verification — Razorpay and Stripe both require the exact bytes that were signed.
+
+### Express — Razorpay (raw body)
+
+```typescript
+import express from "express";
+import { BillingKit, WebhookVerificationError } from "billing-kit";
+
+const app = express();
+
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET!,
+});
+
+// Important: use express.raw on this route only — not express.json()
+app.post(
+  "/webhooks/razorpay",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    const signature = req.headers["x-razorpay-signature"];
+    if (typeof signature !== "string") {
+      res.status(400).send("Missing signature");
+      return;
+    }
+
+    try {
+      const event = billing.verifyWebhook(req.body, signature);
+      // event.type              → raw Razorpay event (e.g. subscription.charged)
+      // event.normalizedType    → shared name (payment.captured, subscription.cancelled, …)
+      // event.entity            → { id, kind, amount, currency, status, parentId }
+
+      switch (event.normalizedType) {
+        case "payment.captured":
+        case "refund.processed":
+        case "subscription.activated":
+        case "subscription.charged":
+        case "subscription.cancelled":
+          // grant / revoke access, record ledger, etc.
+          break;
+        default:
+          break;
+      }
+
+      res.json({ received: true });
+    } catch (err) {
+      if (err instanceof WebhookVerificationError) {
+        res.status(400).send("Invalid signature");
+        return;
+      }
+      throw err;
+    }
+  },
+);
+```
+
+### Stripe / shared API
 
 ```typescript
 import { BillingKit, WebhookVerificationError } from "billing-kit";
 
-// Stripe — header: Stripe-Signature
+// Stripe — header: Stripe-Signature (also requires raw body)
 try {
   const event = billing.verifyWebhook(
     req.body,
     req.headers["stripe-signature"] as string,
   );
-  // event.type, event.id, event.data, event.provider
+  // event.type, event.normalizedType, event.entity, event.data, event.provider
 } catch (err) {
   if (err instanceof WebhookVerificationError) {
     // invalid signature — return 400
@@ -474,12 +532,32 @@ const event = billing.verifyWebhook(
 );
 ```
 
-| Provider | Header | Common events |
-|----------|--------|----------------|
-| Stripe | `Stripe-Signature` | `payment_intent.succeeded`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded` |
+| Provider | Header | Common events (raw → normalized) |
+|----------|--------|----------------------------------|
+| Stripe | `Stripe-Signature` | `payment_intent.succeeded` → `payment.captured`, `charge.refunded` → `refund.processed`, `customer.subscription.deleted` → `subscription.cancelled`, `invoice.paid` → `subscription.charged` / `invoice.paid` |
 | Razorpay | `X-Razorpay-Signature` | `payment.captured`, `refund.processed`, `subscription.activated`, `subscription.charged`, `subscription.cancelled`, `invoice.paid` |
 
 Example handlers: [`examples/stripe/webhooks.ts`](./examples/stripe/webhooks.ts), [`examples/razorpay/webhooks.ts`](./examples/razorpay/webhooks.ts)
+
+### Razorpay Orders + payment signature
+
+```typescript
+const order = await billing.createOrder({
+  amount: 99900,
+  currency: "inr",
+  receipt: `rcpt_${Date.now()}`,
+});
+
+// After Checkout, verify client response before fulfilling
+const ok = billing.verifyPaymentSignature({
+  orderId: order.id,
+  paymentId: "pay_xxx",
+  signature: "from_checkout_response",
+});
+
+const payment = await billing.fetchPayment("pay_xxx");
+const refund = await billing.fetchRefund("rfnd_xxx");
+```
 
 Wire subscription lifecycle with webhooks — e.g. on `invoice.paid` / `subscription.charged` grant access; on `customer.subscription.deleted` / `subscription.cancelled` revoke it.
 ## Storage adapters
@@ -562,6 +640,7 @@ try {
 |------|---------|
 | Invoice | `generateInvoice`, `getInvoiceSummary`, `getInvoice`, `generateInvoicePdf` |
 | Payment | `createPayment`, `capturePayment`, `cancelPayment`, `getPaymentStatus` |
+| Razorpay | `createOrder`, `verifyPaymentSignature`, `fetchPayment`, `fetchRefund` |
 | Refund | `refundPayment` |
 | Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `cancelSubscription`, `renewSubscription` |
 | Stripe billing | `pauseSubscription`, `resumeSubscription`, `retrieveSubscription`, `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
@@ -591,6 +670,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Tax engine (GST / VAT / sales tax, autoTax, tax lines) |
 | Done | Multi-currency (INR, USD, EUR, GBP, AED, SGD) |
 | Done | Stripe customers, pause/resume, hosted invoices, metered usage |
+| Done | Razorpay orders, payment signature, fetch helpers, normalized webhooks |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

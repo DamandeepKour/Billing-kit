@@ -23,6 +23,19 @@ export type {
   RefundResult,
 } from "./payment";
 export type {
+  CreateOrderInput,
+  OrderResult,
+  VerifyPaymentSignatureInput,
+} from "./order";
+export type {
+  NormalizedWebhookType,
+  RazorpayWebhookEventName,
+  WebhookEntity,
+  WebhookEntityKind,
+  WebhookEvent,
+} from "./webhook";
+export { RAZORPAY_WEBHOOK_EVENTS } from "./webhook";
+export type {
   AggregateUsage,
   BillingInterval,
   CreatePlanInput,
@@ -61,5 +74,4 @@ export type {
 } from "./coupon";
 export { TransactionType } from "./transaction";
 export type { RecordTransactionInput, Transaction } from "./transaction";
-export type { WebhookEvent } from "./webhook";
 export type { GeneratePdfInput } from "./pdf";

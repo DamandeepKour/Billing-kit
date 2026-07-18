@@ -1,9 +1,15 @@
 /**
- * Razorpay webhooks — HMAC verify and handle payment / subscription events.
+ * Razorpay webhooks — verify raw body HMAC and handle normalized events.
  *
- *   app.post("/webhooks/razorpay", express.raw({ type: "application/json" }), razorpayWebhookHandler)
+ * Express (required: raw body — do not use express.json() on this route):
  *
- * Dashboard → Settings → Webhooks → secret
+ *   app.post(
+ *     "/webhooks/razorpay",
+ *     express.raw({ type: "application/json" }),
+ *     razorpayWebhookHandler,
+ *   );
+ *
+ * Dashboard → Settings → Webhooks → secret → RAZORPAY_WEBHOOK_SECRET
  */
 import crypto from "crypto";
 import {
@@ -19,27 +25,16 @@ const billing = new BillingKit({
   webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET!,
 });
 
-type RazorpayPayload = {
-  payment?: { entity: { id: string; amount: number; currency: string } };
-  refund?: {
-    entity: { id: string; amount: number; currency: string; payment_id: string };
-  };
-  subscription?: { entity: { id: string; status: string; plan_id: string } };
-  invoice?: { entity: { id: string; amount: number; currency: string } };
-};
-
 async function handleRazorpayEvent(event: WebhookEvent): Promise<void> {
-  const payload = event.data as RazorpayPayload;
-
-  switch (event.type) {
+  // Prefer normalizedType + entity for provider-agnostic handlers
+  switch (event.normalizedType) {
     case "payment.captured": {
-      const payment = payload.payment?.entity;
-      if (!payment) break;
+      if (event.entity.kind !== "payment") break;
       await billing.recordTransaction({
         type: TransactionType.PAYMENT,
-        amount: payment.amount,
-        currency: payment.currency.toLowerCase(),
-        referenceId: payment.id,
+        amount: event.entity.amount ?? 0,
+        currency: event.entity.currency ?? "inr",
+        referenceId: event.entity.id,
       });
       break;
     }
@@ -48,14 +43,15 @@ async function handleRazorpayEvent(event: WebhookEvent): Promise<void> {
       break;
 
     case "refund.processed": {
-      const refund = payload.refund?.entity;
-      if (!refund) break;
+      if (event.entity.kind !== "refund") break;
       await billing.recordTransaction({
         type: TransactionType.REFUND,
-        amount: refund.amount,
-        currency: refund.currency.toLowerCase(),
-        referenceId: refund.id,
-        metadata: { paymentId: refund.payment_id },
+        amount: event.entity.amount ?? 0,
+        currency: event.entity.currency ?? "inr",
+        referenceId: event.entity.id,
+        metadata: event.entity.parentId
+          ? { paymentId: event.entity.parentId }
+          : undefined,
       });
       break;
     }
@@ -64,12 +60,13 @@ async function handleRazorpayEvent(event: WebhookEvent): Promise<void> {
     case "subscription.charged":
       await billing.recordTransaction({
         type: TransactionType.SUBSCRIPTION,
-        amount: 0,
-        currency: "inr",
-        referenceId: payload.subscription?.entity.id ?? event.id,
+        amount: event.entity.amount ?? 0,
+        currency: event.entity.currency ?? "inr",
+        referenceId: event.entity.id,
         metadata: {
-          status: payload.subscription?.entity.status ?? "",
-          planId: payload.subscription?.entity.plan_id ?? "",
+          status: event.entity.status ?? "",
+          planId: event.entity.parentId ?? "",
+          providerEvent: event.type,
         },
       });
       break;
@@ -78,17 +75,14 @@ async function handleRazorpayEvent(event: WebhookEvent): Promise<void> {
     case "subscription.completed":
       break;
 
-    case "invoice.paid": {
-      const invoice = payload.invoice?.entity;
-      if (!invoice) break;
+    case "invoice.paid":
       await billing.recordTransaction({
         type: TransactionType.PAYMENT,
-        amount: invoice.amount,
-        currency: invoice.currency.toLowerCase(),
-        referenceId: invoice.id,
+        amount: event.entity.amount ?? 0,
+        currency: event.entity.currency ?? "inr",
+        referenceId: event.entity.id,
       });
       break;
-    }
 
     default:
       break;
@@ -97,6 +91,7 @@ async function handleRazorpayEvent(event: WebhookEvent): Promise<void> {
 
 export async function razorpayWebhookHandler(
   req: {
+    /** Must be the raw body Buffer/string from express.raw() */
     body: Buffer | string;
     headers: Record<string, string | string[] | undefined>;
   },
@@ -114,6 +109,7 @@ export async function razorpayWebhookHandler(
   }
 
   try {
+    // Pass raw body — do not JSON.parse before verifyWebhook
     const event = billing.verifyWebhook(req.body, signature);
     await handleRazorpayEvent(event);
     res.status(200).json({ received: true });

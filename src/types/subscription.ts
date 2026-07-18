@@ -59,6 +59,8 @@ export interface CreateSubscriptionInput {
    * Usually a PaymentMethod id already attached to the customer.
    */
   defaultPaymentMethodId?: string;
+  /** Razorpay — number of billing cycles (default 12). */
+  totalCount?: number;
 }
 
 export interface PauseSubscriptionInput {

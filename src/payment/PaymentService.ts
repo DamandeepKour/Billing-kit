@@ -1,10 +1,29 @@
 import type { PaymentGateway } from "../interfaces/PaymentGateway";
+import type { RazorpayBillingProvider } from "../interfaces/RazorpayBillingProvider";
+import type {
+  CreateOrderInput,
+  OrderResult,
+  VerifyPaymentSignatureInput,
+} from "../types/order";
 import type {
   CapturePaymentInput,
   CreatePaymentInput,
   PaymentResult,
+  RefundResult,
 } from "../types/payment";
 import { resolveCurrency } from "../utils/currency";
+import { UnsupportedOperationError } from "../utils/stripe-errors";
+
+function isRazorpayBillingProvider(
+  gateway: PaymentGateway,
+): gateway is PaymentGateway & RazorpayBillingProvider {
+  const candidate = gateway as PaymentGateway & Partial<RazorpayBillingProvider>;
+  return (
+    gateway.name === "razorpay" &&
+    typeof candidate.createOrder === "function" &&
+    typeof candidate.verifyPaymentSignature === "function"
+  );
+}
 
 export class PaymentService {
   constructor(
@@ -31,5 +50,39 @@ export class PaymentService {
 
   getPaymentStatus(paymentId: string): Promise<PaymentResult> {
     return this.gateway.getPaymentStatus(paymentId);
+  }
+
+  private requireRazorpay(): PaymentGateway & RazorpayBillingProvider {
+    if (!isRazorpayBillingProvider(this.gateway)) {
+      throw new UnsupportedOperationError(
+        "Razorpay billing helpers",
+        this.gateway.name,
+      );
+    }
+    return this.gateway;
+  }
+
+  /** Razorpay only — create an Order before Checkout / capture. */
+  async createOrder(input: CreateOrderInput): Promise<OrderResult> {
+    const currency = resolveCurrency({
+      override: input.currency,
+      configDefault: this.defaultCurrency,
+    });
+    return this.requireRazorpay().createOrder({ ...input, currency });
+  }
+
+  /** Razorpay only — verify Checkout payment signature (`orderId|paymentId`). */
+  verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean {
+    return this.requireRazorpay().verifyPaymentSignature(input);
+  }
+
+  /** Razorpay only — fetch a payment by id. */
+  async fetchPayment(paymentId: string): Promise<PaymentResult> {
+    return this.requireRazorpay().fetchPayment(paymentId);
+  }
+
+  /** Razorpay only — fetch a refund by id. */
+  async fetchRefund(refundId: string): Promise<RefundResult> {
+    return this.requireRazorpay().fetchRefund(refundId);
   }
 }

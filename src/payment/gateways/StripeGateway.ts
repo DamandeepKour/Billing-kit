@@ -34,6 +34,7 @@ import type { WebhookEvent } from "../../types/webhook";
 import { InvalidConfigError, WebhookVerificationError } from "../../utils/errors";
 import { normalizeCurrency } from "../../utils/currency";
 import { mapStripeError, withStripeErrors } from "../../utils/stripe-errors";
+import { normalizeStripeWebhook } from "../../utils/webhook-normalize";
 
 const INTERVAL_MAP: Record<string, Stripe.Price.Recurring.Interval> = {
   monthly: "month",
@@ -504,12 +505,12 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
         this.config.webhookSecret,
       );
 
-      return {
-        id: event.id,
-        type: event.type,
-        provider: this.name,
-        data: event.data.object,
-      };
+      return normalizeStripeWebhook(
+        event.id,
+        event.type,
+        event.data.object,
+        this.name,
+      );
     } catch (error) {
       mapStripeError(error);
     }

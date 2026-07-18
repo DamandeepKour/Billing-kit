@@ -46,5 +46,7 @@ describe("Razorpay webhooks", () => {
 
     const event = billing.verifyWebhook(body, signature);
     expect(event.type).toBe("payment.captured");
+    expect(event.normalizedType).toBe("payment.captured");
+    expect(event.entity.id).toBe("pay_123");
   });
 });

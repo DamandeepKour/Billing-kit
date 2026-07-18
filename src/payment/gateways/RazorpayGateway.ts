@@ -1,7 +1,13 @@
 import crypto from "crypto";
 import Razorpay from "razorpay";
 import type { PaymentGateway } from "../../interfaces/PaymentGateway";
+import type { RazorpayBillingProvider } from "../../interfaces/RazorpayBillingProvider";
 import type { BillingKitConfig } from "../../types/config";
+import type {
+  CreateOrderInput,
+  OrderResult,
+  VerifyPaymentSignatureInput,
+} from "../../types/order";
 import type {
   CapturePaymentInput,
   CreatePaymentInput,
@@ -19,6 +25,7 @@ import type {
 import type { WebhookEvent } from "../../types/webhook";
 import { InvalidConfigError, WebhookVerificationError } from "../../utils/errors";
 import { normalizeCurrency } from "../../utils/currency";
+import { normalizeRazorpayWebhook } from "../../utils/webhook-normalize";
 
 function mapRazorpayStatus(
   status: string,
@@ -28,10 +35,41 @@ function mapRazorpayStatus(
   if (status === "authorized") return "authorized";
   if (status === "created") return "pending";
   if (status === "failed") return "failed";
+  if (status === "refunded") return "captured";
   return "pending";
 }
 
-export class RazorpayGateway implements PaymentGateway {
+function timingSafeEqualHex(a: string, b: string): boolean {
+  try {
+    const bufA = Buffer.from(a, "utf8");
+    const bufB = Buffer.from(b, "utf8");
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
+
+function mapOrder(order: {
+  id: string;
+  amount: number | string;
+  currency: string;
+  status?: string;
+  receipt?: string | null;
+  notes?: Record<string, string> | null;
+}): OrderResult {
+  return {
+    id: order.id,
+    amount: Number(order.amount),
+    currency: order.currency.toLowerCase(),
+    status: order.status ?? "created",
+    receipt: order.receipt ?? null,
+    provider: "razorpay",
+    notes: (order.notes as Record<string, string>) ?? undefined,
+  };
+}
+
+export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider {
   readonly name = "razorpay";
   private readonly client: Razorpay;
   private readonly currency: string;
@@ -48,21 +86,37 @@ export class RazorpayGateway implements PaymentGateway {
     this.currency = normalizeCurrency(config.currency);
   }
 
-  async createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
+  async createOrder(input: CreateOrderInput): Promise<OrderResult> {
     const order = await this.client.orders.create({
       amount: input.amount,
       currency: (input.currency ?? this.currency).toUpperCase(),
-      receipt: input.orderId ?? `rcpt_${Date.now()}`,
+      receipt: input.receipt ?? `rcpt_${Date.now()}`,
+      notes: input.notes,
+      partial_payment: input.partialPayment,
+    });
+
+    return mapOrder(order as Parameters<typeof mapOrder>[0]);
+  }
+
+  /**
+   * Creates a Razorpay Order (same as {@link createOrder}) and maps it to PaymentResult
+   * for the shared payment API.
+   */
+  async createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
+    const order = await this.createOrder({
+      amount: input.amount,
+      currency: input.currency,
+      receipt: input.orderId,
       notes: input.metadata,
     });
 
     return {
       id: order.id,
       status: "pending",
-      amount: Number(order.amount),
-      currency: order.currency.toLowerCase(),
+      amount: order.amount,
+      currency: order.currency,
       provider: this.name,
-      metadata: (order.notes as Record<string, string>) ?? undefined,
+      metadata: order.notes,
     };
   }
 
@@ -70,7 +124,7 @@ export class RazorpayGateway implements PaymentGateway {
     const payment = await this.client.payments.capture(
       input.paymentId,
       input.amount ?? 0,
-      (this.currency).toUpperCase(),
+      this.currency.toUpperCase(),
     );
 
     return {
@@ -83,12 +137,14 @@ export class RazorpayGateway implements PaymentGateway {
   }
 
   async cancelPayment(paymentId: string): Promise<PaymentResult> {
-    // Razorpay does not support cancel after authorization in the same way;
-    // return current status for API consistency.
-    return this.getPaymentStatus(paymentId);
+    return this.fetchPayment(paymentId);
   }
 
   async getPaymentStatus(paymentId: string): Promise<PaymentResult> {
+    return this.fetchPayment(paymentId);
+  }
+
+  async fetchPayment(paymentId: string): Promise<PaymentResult> {
     const payment = await this.client.payments.fetch(paymentId);
 
     return {
@@ -97,6 +153,7 @@ export class RazorpayGateway implements PaymentGateway {
       amount: Number(payment.amount),
       currency: payment.currency.toLowerCase(),
       provider: this.name,
+      metadata: (payment.notes as Record<string, string>) ?? undefined,
     };
   }
 
@@ -113,6 +170,27 @@ export class RazorpayGateway implements PaymentGateway {
       status: refund.status === "processed" ? "succeeded" : "pending",
       provider: this.name,
     };
+  }
+
+  async fetchRefund(refundId: string): Promise<RefundResult> {
+    const refund = await this.client.refunds.fetch(refundId);
+
+    return {
+      id: refund.id,
+      paymentId: String(refund.payment_id),
+      amount: Number(refund.amount),
+      status: refund.status === "processed" ? "succeeded" : "pending",
+      provider: this.name,
+    };
+  }
+
+  verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean {
+    const expected = crypto
+      .createHmac("sha256", this.config.secretKey)
+      .update(`${input.orderId}|${input.paymentId}`)
+      .digest("hex");
+
+    return timingSafeEqualHex(expected, input.signature);
   }
 
   async createPlan(input: CreatePlanInput): Promise<Plan> {
@@ -170,12 +248,25 @@ export class RazorpayGateway implements PaymentGateway {
   }
 
   async createSubscription(input: CreateSubscriptionInput): Promise<Subscription> {
-    const subscription = await this.client.subscriptions.create({
+    const params: Record<string, unknown> = {
       plan_id: input.planId,
       customer_notify: 1,
-      total_count: 12,
+      total_count: input.totalCount ?? 12,
       notes: input.metadata,
-    });
+    };
+
+    if (input.customerId) {
+      params.customer_id = input.customerId;
+    }
+
+    const subscription = (await this.client.subscriptions.create(
+      params as never,
+    )) as {
+      id: string;
+      status: string;
+      plan_id: string;
+      current_end?: number;
+    };
 
     return {
       id: subscription.id,
@@ -216,31 +307,28 @@ export class RazorpayGateway implements PaymentGateway {
     };
   }
 
+  /**
+   * Verify webhook signature against the **raw** body.
+   * Pass `req.body` as Buffer/string from `express.raw()` — do not parse JSON first.
+   */
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
     if (!this.config.webhookSecret) {
       throw new WebhookVerificationError("webhookSecret is required for Razorpay webhooks");
     }
 
-    const body = typeof payload === "string" ? payload : payload.toString("utf8");
+    const raw =
+      typeof payload === "string" ? payload : Buffer.from(payload);
+
     const expected = crypto
       .createHmac("sha256", this.config.webhookSecret)
-      .update(body)
+      .update(raw)
       .digest("hex");
 
-    if (expected !== signature) {
+    if (!timingSafeEqualHex(expected, signature)) {
       throw new WebhookVerificationError("Invalid Razorpay webhook signature");
     }
 
-    const parsed = JSON.parse(body) as {
-      event: string;
-      payload: { payment?: { entity: { id: string } } };
-    };
-
-    return {
-      id: parsed.payload?.payment?.entity?.id ?? `evt_${Date.now()}`,
-      type: parsed.event,
-      provider: this.name,
-      data: parsed.payload,
-    };
+    const body = typeof raw === "string" ? raw : raw.toString("utf8");
+    return normalizeRazorpayWebhook(body, this.name);
   }
 }

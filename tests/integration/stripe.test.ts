@@ -103,5 +103,7 @@ describe("Stripe webhooks", () => {
 
     const event = billing.verifyWebhook(payload, header);
     expect(event.type).toBe("payment_intent.succeeded");
+    expect(event.normalizedType).toBe("payment.captured");
+    expect(event.entity.id).toBe("pi_test");
   });
 });

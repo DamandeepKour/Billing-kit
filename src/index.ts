@@ -13,6 +13,7 @@ export type {
   Coupon,
   CouponResult,
   CouponType,
+  CreateOrderInput,
   CreatePaymentInput,
   CreatePlanInput,
   CreateProviderCustomerInput,
@@ -26,6 +27,8 @@ export type {
   InvoiceSummary,
   InvoiceTaxMode,
   LineItem,
+  NormalizedWebhookType,
+  OrderResult,
   PauseCollectionBehavior,
   PauseSubscriptionInput,
   PaymentMethodResult,
@@ -34,6 +37,7 @@ export type {
   Plan,
   ProviderCustomer,
   ProviderInvoice,
+  RazorpayWebhookEventName,
   RecordTransactionInput,
   RefundPaymentInput,
   RefundResult,
@@ -51,14 +55,18 @@ export type {
   UsageRecord,
   UsageType,
   VATInput,
+  VerifyPaymentSignatureInput,
+  WebhookEntity,
+  WebhookEntityKind,
   WebhookEvent,
 } from "./types";
 
-export { TransactionType } from "./types";
+export { RAZORPAY_WEBHOOK_EVENTS, TransactionType } from "./types";
 
 export type {
   InvoiceRepository,
   PaymentGateway,
+  RazorpayBillingProvider,
   StripeBillingProvider,
   TransactionRepository,
 } from "./interfaces";
