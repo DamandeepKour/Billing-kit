@@ -29,9 +29,13 @@ export type {
   RecordTransactionInput,
   RefundPaymentInput,
   RefundResult,
+  SalesTaxInput,
   Subscription,
   TaxBreakdown,
+  TaxCalculationInput,
   TaxConfig,
+  TaxLine,
+  TaxType,
   Transaction,
   UpdatePlanInput,
   VATInput,
@@ -76,3 +80,11 @@ export {
 } from "./utils/currency";
 
 export type { SupportedCurrency } from "./utils/currency";
+
+export {
+  TaxEngine,
+  TaxService,
+  calculateGST,
+  calculateVAT,
+  calculateSalesTax,
+} from "./tax";

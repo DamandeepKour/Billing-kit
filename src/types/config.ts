@@ -17,8 +17,12 @@ export interface CompanyDetails {
 
 export interface TaxConfig {
   enabled: boolean;
+  /** When true, pick GST / VAT / sales tax from country automatically */
+  autoTax?: boolean;
   defaultRate?: number;
+  taxType?: "gst" | "vat" | "sales_tax" | "none";
   sellerState?: string;
+  sellerCountry?: string;
 }
 
 export interface BillingKitConfig {

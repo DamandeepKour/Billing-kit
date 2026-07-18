@@ -20,6 +20,10 @@ export interface Customer {
   gstin?: string;
   /** EU / other VAT registration number */
   vatNumber?: string;
+  /** Generic tax ID (GSTIN / VAT / EIN) */
+  customerTaxId?: string;
+  /** B2B — may trigger VAT reverse charge */
+  isBusinessCustomer?: boolean;
 }
 
 export interface LineItem {
@@ -39,7 +43,7 @@ export interface Discount {
   description?: string;
 }
 
-export type InvoiceTaxMode = "gst" | "vat" | "none";
+export type InvoiceTaxMode = "gst" | "vat" | "sales_tax" | "none";
 
 export interface GenerateInvoiceInput {
   customer: Customer;
@@ -47,10 +51,19 @@ export interface GenerateInvoiceInput {
   lineItems: LineItem[];
   discounts?: Discount[];
   taxRate?: number;
-  /** Override seller state for GST place-of-supply (defaults to config.tax.sellerState) */
-  sellerState?: string;
-  /** gst = CGST/SGST or IGST; vat = single VAT line; none = no tax */
+  taxType?: InvoiceTaxMode;
+  /** @deprecated Prefer taxType */
   taxMode?: InvoiceTaxMode;
+  country?: string;
+  /** Buyer / place-of-supply state (defaults to billingAddress.state) */
+  state?: string;
+  placeOfSupply?: string;
+  /** Override seller state for GST (defaults to config.tax.sellerState) */
+  sellerState?: string;
+  customerTaxId?: string;
+  isBusinessCustomer?: boolean;
+  /** Override config.tax.autoTax for this invoice */
+  autoTax?: boolean;
   notes?: string;
   currency?: string;
   /** Custom number; otherwise auto: INV-YYYY-00001 */

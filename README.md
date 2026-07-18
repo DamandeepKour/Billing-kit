@@ -13,7 +13,7 @@ npm install billing-kit
 - Refunds — full and partial
 - Subscriptions — plans, create, cancel, renew (monthly / quarterly / yearly)
 - Webhooks — signature verification for Stripe and Razorpay
-- Tax — GST (CGST / SGST / IGST) and VAT
+- Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
 - Coupons — percentage and flat discounts
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
@@ -272,35 +272,92 @@ Full samples (writes PDFs to `./tmp/`): [`examples/invoices-tax-pdf.ts`](./examp
 
 ## Tax support
 
-| Method | Use |
-|--------|-----|
-| `calculateGST()` | India GST — same state → CGST + SGST; different state → IGST |
-| `calculateVAT()` | Single VAT rate |
+Country/state tax engine for **GST**, **VAT**, and **sales tax**. Structured breakdown includes `taxType`, `taxPercent`, `taxLines`, and totals.
 
 ```typescript
-// Intra-state (seller MH, buyer MH)
-billing.calculateGST({
-  amount: 100000,
-  rate: 18,
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  tax: {
+    enabled: true,
+    autoTax: true,          // pick GST / VAT / sales tax from country
+    defaultRate: 18,
+    sellerState: "MH",
+    sellerCountry: "IN",
+  },
+});
+
+// Unified engine
+billing.calculateTax({
+  amount: 10000,
+  autoTax: true,
+  country: "IN",
   sellerState: "MH",
   buyerState: "MH",
+  rate: 18,
 });
-// → cgst: 9000, sgst: 9000, igst: 0, totalTax: 18000, total: 118000
+// → taxType: "gst", taxLines: [{ CGST 9% }, { SGST 9% }], totalTax: 1800
 
-// Inter-state (seller MH, buyer KA)
-billing.calculateGST({
-  amount: 100000,
+// MH → DL (inter-state IGST)
+billing.calculateTax({
+  amount: 10000,
+  taxType: "gst",
   rate: 18,
   sellerState: "MH",
-  buyerState: "KA",
+  buyerState: "DL",
+  placeOfSupply: "DL",
+  country: "IN",
 });
-// → igst: 18000, cgst: 0, sgst: 0, total: 118000
+// → taxLines: [{ IGST 18% }], igst: 1800
 
-billing.calculateVAT({ amount: 100000, rate: 20 });
-// → vat: 20000, total: 120000
+// EU VAT (+ reverse charge for B2B with VAT ID)
+billing.calculateTax({
+  amount: 10000,
+  taxType: "vat",
+  rate: 20,
+  country: "DE",
+  isBusinessCustomer: true,
+  customerTaxId: "DE123456789",
+});
+// → reverseCharge: true, totalTax: 0
 ```
 
-On invoices, set `taxMode: "gst"` or `"vat"` plus `taxRate` / `sellerState`. Config defaults: `tax.enabled`, `tax.defaultRate`, `tax.sellerState`.
+| Field | Purpose |
+|-------|---------|
+| `taxType` | `gst` \| `vat` \| `sales_tax` \| `none` |
+| `autoTax` | Infer type from `country` (IN→GST, EU→VAT, US→sales tax) |
+| `country` / `state` / `placeOfSupply` | Jurisdiction |
+| `sellerState` / `buyerState` | GST intra vs inter-state |
+| `customerTaxId` / `isBusinessCustomer` | VAT reverse charge |
+
+Invoice tax summary:
+
+```typescript
+const invoice = await billing.generateInvoice({
+  autoTax: true,
+  country: "IN",
+  sellerState: "MH",
+  customer: { name: "Buyer", gstin: "27AAAAA0000A1Z5", customerTaxId: "27AAAAA0000A1Z5" },
+  billingAddress: {
+    line1: "…",
+    city: "Mumbai",
+    state: "MH",
+    postalCode: "400001",
+    country: "IN",
+  },
+  lineItems: [{ description: "Service", quantity: 1, unitAmount: 10000 }],
+});
+
+invoice.tax;
+// {
+//   taxType: "gst",
+//   taxPercent: 18,
+//   taxLines: [{ name: "CGST", rate: 9, amount: 900 }, { name: "SGST", rate: 9, amount: 900 }],
+//   taxableAmount, cgst, sgst, igst, vat, salesTax, totalTax, total, placeOfSupply
+// }
+```
+
+Helpers: `calculateGST()`, `calculateVAT()`, `calculateTax()`.
 
 ## Webhook verification
 
@@ -416,7 +473,7 @@ try {
 | Payment | `createPayment`, `capturePayment`, `cancelPayment`, `getPaymentStatus` |
 | Refund | `refundPayment` |
 | Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `cancelSubscription`, `renewSubscription` |
-| Tax | `calculateGST`, `calculateVAT` |
+| Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `applyCoupon`, `validateCoupon` |
 | Transaction | `recordTransaction`, `getTransaction` |
 | Webhook | `verifyWebhook` |
@@ -439,6 +496,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Stripe + Razorpay payments, refunds, subscriptions |
 | Done | GST / VAT, invoices, PDF, webhooks |
 | Done | Pluggable invoice / transaction repositories |
+| Done | Tax engine (GST / VAT / sales tax, autoTax, tax lines) |
 | Done | Multi-currency (INR, USD, EUR, GBP, AED, SGD) |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |

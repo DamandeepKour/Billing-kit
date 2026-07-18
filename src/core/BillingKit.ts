@@ -20,7 +20,12 @@ import type {
   Subscription,
   UpdatePlanInput,
 } from "../types/subscription";
-import type { GSTInput, TaxBreakdown, VATInput } from "../types/tax";
+import type {
+  GSTInput,
+  TaxBreakdown,
+  TaxCalculationInput,
+  VATInput,
+} from "../types/tax";
 import type {
   RecordTransactionInput,
   Transaction,
@@ -153,6 +158,18 @@ export class BillingKit {
 
   calculateVAT(input: VATInput): TaxBreakdown {
     return this.taxService.calculateVAT(input);
+  }
+
+  /** Unified tax engine — GST, VAT, or sales tax (supports autoTax). */
+  calculateTax(input: TaxCalculationInput): TaxBreakdown {
+    return this.taxService.calculate({
+      ...input,
+      rate: input.rate ?? this.config.tax?.defaultRate,
+      autoTax: input.autoTax ?? this.config.tax?.autoTax,
+      sellerState: input.sellerState ?? this.config.tax?.sellerState,
+      country:
+        input.country ?? this.config.tax?.sellerCountry ?? input.country,
+    });
   }
 
   applyCoupon(input: ApplyCouponInput): CouponResult {

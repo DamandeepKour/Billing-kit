@@ -7,7 +7,7 @@ import type {
   InvoiceSummary,
   LineItem,
 } from "../types/invoice";
-import { TaxService } from "../tax/TaxService";
+import { TaxEngine } from "../tax/TaxEngine";
 import {
   CurrencyMismatchError,
   InvoiceNotFoundError,
@@ -71,7 +71,7 @@ function assertLineItemCurrencyConsistency(
 }
 
 export class InvoiceService {
-  private readonly taxService = new TaxService();
+  private readonly taxEngine = new TaxEngine();
   private readonly numberGenerator = new InvoiceNumberGenerator();
 
   constructor(
@@ -92,41 +92,49 @@ export class InvoiceService {
     const discountTotal = applyDiscounts(subtotal, input.discounts);
     const taxableAmount = subtotal - discountTotal;
 
+    const taxEnabled = this.config.tax?.enabled ?? false;
+    const autoTax = input.autoTax ?? this.config.tax?.autoTax ?? false;
+    const taxType =
+      input.taxType ??
+      input.taxMode ??
+      this.config.tax?.taxType ??
+      (taxEnabled || autoTax ? undefined : "none");
+
+    const country =
+      input.country ??
+      input.billingAddress.country ??
+      this.config.tax?.sellerCountry;
+    const buyerState =
+      input.state ?? input.placeOfSupply ?? input.billingAddress.state;
     const sellerState =
       input.sellerState ?? this.config.tax?.sellerState ?? "";
-    const buyerState = input.billingAddress.state;
-    const taxRate = input.taxRate ?? this.config.tax?.defaultRate ?? 0;
-    const taxMode = input.taxMode ?? (this.config.tax?.enabled ? "gst" : "none");
+    const customerTaxId =
+      input.customerTaxId ??
+      input.customer.customerTaxId ??
+      input.customer.gstin ??
+      input.customer.vatNumber;
+    const isBusinessCustomer =
+      input.isBusinessCustomer ?? input.customer.isBusinessCustomer;
 
     const tax =
-      taxMode === "none" || taxRate <= 0
-        ? {
-            taxableAmount,
-            cgst: 0,
-            sgst: 0,
-            igst: 0,
-            vat: 0,
-            totalTax: 0,
-            total: taxableAmount,
-          }
-        : taxMode === "vat"
-          ? this.taxService.calculateVAT({ amount: taxableAmount, rate: taxRate })
-          : sellerState
-            ? this.taxService.calculateGST({
-                amount: taxableAmount,
-                rate: taxRate,
-                sellerState,
-                buyerState,
-              })
-            : {
-                taxableAmount,
-                cgst: 0,
-                sgst: 0,
-                igst: 0,
-                vat: 0,
-                totalTax: 0,
-                total: taxableAmount,
-              };
+      !taxEnabled && !autoTax && (taxType === "none" || taxType === undefined)
+        ? this.taxEngine.calculate({
+            amount: taxableAmount,
+            taxType: "none",
+          })
+        : this.taxEngine.calculate({
+            amount: taxableAmount,
+            taxType: taxType === "none" ? "none" : taxType,
+            rate: input.taxRate ?? this.config.tax?.defaultRate,
+            country,
+            state: buyerState,
+            sellerState,
+            buyerState,
+            placeOfSupply: input.placeOfSupply ?? buyerState,
+            customerTaxId,
+            isBusinessCustomer,
+            autoTax: autoTax || (taxEnabled && !taxType),
+          });
 
     const invoice: Invoice = {
       id: generateId("inv"),

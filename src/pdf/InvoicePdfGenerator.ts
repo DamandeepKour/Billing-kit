@@ -89,23 +89,51 @@ export class InvoicePdfGenerator {
         );
       }
 
-      if (invoice.tax.cgst > 0) {
-        doc.text(`CGST: ${formatAmount(invoice.tax.cgst, invoice.currency)}`, {
+      if (invoice.tax.taxLines.length > 0) {
+        doc.moveDown(0.3);
+        doc.fontSize(10).text("Tax breakdown:", { align: "right" });
+        for (const line of invoice.tax.taxLines) {
+          doc.text(
+            `${line.name} (${line.rate}%): ${formatAmount(line.amount, invoice.currency)}`,
+            { align: "right" },
+          );
+        }
+      } else {
+        if (invoice.tax.cgst > 0) {
+          doc.text(`CGST: ${formatAmount(invoice.tax.cgst, invoice.currency)}`, {
+            align: "right",
+          });
+        }
+        if (invoice.tax.sgst > 0) {
+          doc.text(`SGST: ${formatAmount(invoice.tax.sgst, invoice.currency)}`, {
+            align: "right",
+          });
+        }
+        if (invoice.tax.igst > 0) {
+          doc.text(`IGST: ${formatAmount(invoice.tax.igst, invoice.currency)}`, {
+            align: "right",
+          });
+        }
+        if (invoice.tax.vat > 0) {
+          doc.text(`VAT: ${formatAmount(invoice.tax.vat, invoice.currency)}`, {
+            align: "right",
+          });
+        }
+        if (invoice.tax.salesTax > 0) {
+          doc.text(
+            `Sales Tax: ${formatAmount(invoice.tax.salesTax, invoice.currency)}`,
+            { align: "right" },
+          );
+        }
+      }
+
+      if (invoice.tax.placeOfSupply) {
+        doc.fontSize(9).text(`Place of supply: ${invoice.tax.placeOfSupply}`, {
           align: "right",
         });
       }
-      if (invoice.tax.sgst > 0) {
-        doc.text(`SGST: ${formatAmount(invoice.tax.sgst, invoice.currency)}`, {
-          align: "right",
-        });
-      }
-      if (invoice.tax.igst > 0) {
-        doc.text(`IGST: ${formatAmount(invoice.tax.igst, invoice.currency)}`, {
-          align: "right",
-        });
-      }
-      if (invoice.tax.vat > 0) {
-        doc.text(`VAT: ${formatAmount(invoice.tax.vat, invoice.currency)}`, {
+      if (invoice.tax.reverseCharge) {
+        doc.fontSize(9).text("VAT reverse charge applicable", {
           align: "right",
         });
       }
