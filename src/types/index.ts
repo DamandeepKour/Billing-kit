@@ -23,13 +23,27 @@ export type {
   RefundResult,
 } from "./payment";
 export type {
+  AggregateUsage,
   BillingInterval,
   CreatePlanInput,
   CreateSubscriptionInput,
+  PauseCollectionBehavior,
+  PauseSubscriptionInput,
   Plan,
+  ReportUsageInput,
   Subscription,
   UpdatePlanInput,
+  UsageRecord,
+  UsageType,
 } from "./subscription";
+export type {
+  AttachPaymentMethodInput,
+  CreateProviderCustomerInput,
+  PaymentMethodResult,
+  ProviderCustomer,
+  ProviderInvoice,
+  SetDefaultPaymentMethodInput,
+} from "./provider";
 export type {
   GSTInput,
   SalesTaxInput,

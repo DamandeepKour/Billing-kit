@@ -2,7 +2,9 @@ export { BillingKit } from "./core/BillingKit";
 
 export type {
   Address,
+  AggregateUsage,
   ApplyCouponInput,
+  AttachPaymentMethodInput,
   BillingInterval,
   BillingKitConfig,
   BillingProvider,
@@ -13,6 +15,7 @@ export type {
   CouponType,
   CreatePaymentInput,
   CreatePlanInput,
+  CreateProviderCustomerInput,
   CreateSubscriptionInput,
   Customer,
   Discount,
@@ -23,13 +26,20 @@ export type {
   InvoiceSummary,
   InvoiceTaxMode,
   LineItem,
+  PauseCollectionBehavior,
+  PauseSubscriptionInput,
+  PaymentMethodResult,
   PaymentResult,
   PaymentStatus,
   Plan,
+  ProviderCustomer,
+  ProviderInvoice,
   RecordTransactionInput,
   RefundPaymentInput,
   RefundResult,
+  ReportUsageInput,
   SalesTaxInput,
+  SetDefaultPaymentMethodInput,
   Subscription,
   TaxBreakdown,
   TaxCalculationInput,
@@ -38,6 +48,8 @@ export type {
   TaxType,
   Transaction,
   UpdatePlanInput,
+  UsageRecord,
+  UsageType,
   VATInput,
   WebhookEvent,
 } from "./types";
@@ -47,6 +59,7 @@ export { TransactionType } from "./types";
 export type {
   InvoiceRepository,
   PaymentGateway,
+  StripeBillingProvider,
   TransactionRepository,
 } from "./interfaces";
 
@@ -66,6 +79,14 @@ export {
   UnsupportedCurrencyError,
   WebhookVerificationError,
 } from "./utils/errors";
+
+export {
+  StripeAuthenticationError,
+  StripeCardError,
+  StripeInvalidRequestError,
+  UnsupportedOperationError,
+  mapStripeError,
+} from "./utils/stripe-errors";
 
 export {
   SUPPORTED_CURRENCIES,

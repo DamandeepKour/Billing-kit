@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import type { PaymentGateway } from "../../interfaces/PaymentGateway";
+import type { StripeBillingProvider } from "../../interfaces/StripeBillingProvider";
 import type { BillingKitConfig } from "../../types/config";
 import type {
   CapturePaymentInput,
@@ -9,15 +10,30 @@ import type {
   RefundResult,
 } from "../../types/payment";
 import type {
+  AttachPaymentMethodInput,
+  CreateProviderCustomerInput,
+  PaymentMethodResult,
+  ProviderCustomer,
+  ProviderInvoice,
+  SetDefaultPaymentMethodInput,
+} from "../../types/provider";
+import type {
+  AggregateUsage,
+  BillingInterval,
   CreatePlanInput,
   CreateSubscriptionInput,
+  PauseSubscriptionInput,
   Plan,
+  ReportUsageInput,
   Subscription,
   UpdatePlanInput,
+  UsageRecord,
+  UsageType,
 } from "../../types/subscription";
 import type { WebhookEvent } from "../../types/webhook";
 import { InvalidConfigError, WebhookVerificationError } from "../../utils/errors";
 import { normalizeCurrency } from "../../utils/currency";
+import { mapStripeError, withStripeErrors } from "../../utils/stripe-errors";
 
 const INTERVAL_MAP: Record<string, Stripe.Price.Recurring.Interval> = {
   monthly: "month",
@@ -49,7 +65,36 @@ function mapPaymentStatus(status: Stripe.PaymentIntent.Status): PaymentResult["s
   }
 }
 
-export class StripeGateway implements PaymentGateway {
+function mapIntervalFromStripe(
+  interval?: Stripe.Price.Recurring.Interval | null,
+  intervalCount?: number | null,
+): BillingInterval {
+  if (interval === "year") return "yearly";
+  if (interval === "month" && intervalCount === 3) return "quarterly";
+  return "monthly";
+}
+
+function mapSubscription(subscription: Stripe.Subscription, planId?: string): Subscription {
+  const item = subscription.items.data[0];
+  const priceId = planId ?? item?.price.id ?? "";
+
+  return {
+    id: subscription.id,
+    customerId:
+      typeof subscription.customer === "string"
+        ? subscription.customer
+        : subscription.customer.id,
+    planId: priceId,
+    status: subscription.status,
+    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    provider: "stripe",
+    subscriptionItemId: item?.id,
+    paused: Boolean(subscription.pause_collection),
+  };
+}
+
+export class StripeGateway implements PaymentGateway, StripeBillingProvider {
   readonly name = "stripe";
   private readonly stripe: Stripe;
   private readonly currency: string;
@@ -63,208 +108,388 @@ export class StripeGateway implements PaymentGateway {
   }
 
   async createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
-    const intent = await this.stripe.paymentIntents.create(
-      {
-        amount: input.amount,
-        currency: normalizeCurrency(input.currency ?? this.currency),
-        customer: input.customerId,
-        description: input.description,
-        metadata: input.metadata,
-        capture_method: "manual",
-      },
-      input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
-    );
+    return withStripeErrors(async () => {
+      const intent = await this.stripe.paymentIntents.create(
+        {
+          amount: input.amount,
+          currency: normalizeCurrency(input.currency ?? this.currency),
+          customer: input.customerId,
+          description: input.description,
+          metadata: input.metadata,
+          capture_method: "manual",
+        },
+        input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
+      );
 
-    return {
-      id: intent.id,
-      status: mapPaymentStatus(intent.status),
-      amount: intent.amount,
-      currency: intent.currency,
-      provider: this.name,
-      metadata: (intent.metadata as Record<string, string>) ?? undefined,
-    };
+      return {
+        id: intent.id,
+        status: mapPaymentStatus(intent.status),
+        amount: intent.amount,
+        currency: intent.currency,
+        provider: this.name,
+        metadata: (intent.metadata as Record<string, string>) ?? undefined,
+      };
+    });
   }
 
   async capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
-    const intent = await this.stripe.paymentIntents.capture(input.paymentId, {
-      amount_to_capture: input.amount,
-    });
+    return withStripeErrors(async () => {
+      const intent = await this.stripe.paymentIntents.capture(input.paymentId, {
+        amount_to_capture: input.amount,
+      });
 
-    return {
-      id: intent.id,
-      status: mapPaymentStatus(intent.status),
-      amount: intent.amount,
-      currency: intent.currency,
-      provider: this.name,
-    };
+      return {
+        id: intent.id,
+        status: mapPaymentStatus(intent.status),
+        amount: intent.amount,
+        currency: intent.currency,
+        provider: this.name,
+      };
+    });
   }
 
   async cancelPayment(paymentId: string): Promise<PaymentResult> {
-    const intent = await this.stripe.paymentIntents.cancel(paymentId);
+    return withStripeErrors(async () => {
+      const intent = await this.stripe.paymentIntents.cancel(paymentId);
 
-    return {
-      id: intent.id,
-      status: "cancelled",
-      amount: intent.amount,
-      currency: intent.currency,
-      provider: this.name,
-    };
+      return {
+        id: intent.id,
+        status: "cancelled",
+        amount: intent.amount,
+        currency: intent.currency,
+        provider: this.name,
+      };
+    });
   }
 
   async getPaymentStatus(paymentId: string): Promise<PaymentResult> {
-    const intent = await this.stripe.paymentIntents.retrieve(paymentId);
+    return withStripeErrors(async () => {
+      const intent = await this.stripe.paymentIntents.retrieve(paymentId);
 
-    return {
-      id: intent.id,
-      status: mapPaymentStatus(intent.status),
-      amount: intent.amount,
-      currency: intent.currency,
-      provider: this.name,
-    };
+      return {
+        id: intent.id,
+        status: mapPaymentStatus(intent.status),
+        amount: intent.amount,
+        currency: intent.currency,
+        provider: this.name,
+      };
+    });
   }
 
   async refundPayment(input: RefundPaymentInput): Promise<RefundResult> {
-    const refund = await this.stripe.refunds.create(
-      {
-        payment_intent: input.paymentId,
-        amount: input.amount,
-        reason: input.reason as Stripe.RefundCreateParams.Reason | undefined,
-      },
-      input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
-    );
+    return withStripeErrors(async () => {
+      const refund = await this.stripe.refunds.create(
+        {
+          payment_intent: input.paymentId,
+          amount: input.amount,
+          reason: input.reason as Stripe.RefundCreateParams.Reason | undefined,
+        },
+        input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined,
+      );
 
-    return {
-      id: refund.id,
-      paymentId: input.paymentId,
-      amount: refund.amount ?? input.amount ?? 0,
-      status: refund.status === "succeeded" ? "succeeded" : refund.status === "failed" ? "failed" : "pending",
-      provider: this.name,
-    };
+      return {
+        id: refund.id,
+        paymentId: input.paymentId,
+        amount: refund.amount ?? input.amount ?? 0,
+        status:
+          refund.status === "succeeded"
+            ? "succeeded"
+            : refund.status === "failed"
+              ? "failed"
+              : "pending",
+        provider: this.name,
+      };
+    });
   }
 
   async createPlan(input: CreatePlanInput): Promise<Plan> {
-    const product = await this.stripe.products.create({
-      name: input.name,
-      description: input.description,
-      metadata: input.metadata,
-    });
+    return withStripeErrors(async () => {
+      const usageType: UsageType = input.usageType ?? "licensed";
+      const aggregateUsage: AggregateUsage | undefined =
+        usageType === "metered" ? (input.aggregateUsage ?? "sum") : undefined;
 
-    const price = await this.stripe.prices.create({
-      product: product.id,
-      unit_amount: input.amount,
-      currency: normalizeCurrency(input.currency ?? this.currency),
-      recurring: {
+      const product = await this.stripe.products.create({
+        name: input.name,
+        description: input.description,
+        metadata: input.metadata,
+      });
+
+      const recurring: Stripe.PriceCreateParams.Recurring = {
         interval: INTERVAL_MAP[input.interval] ?? "month",
         interval_count: INTERVAL_COUNT[input.interval] ?? 1,
-      },
-    });
+        usage_type: usageType,
+      };
 
-    return {
-      id: price.id,
-      name: input.name,
-      amount: input.amount,
-      currency: price.currency,
-      interval: input.interval,
-      provider: this.name,
-    };
+      if (aggregateUsage) {
+        recurring.aggregate_usage = aggregateUsage;
+      }
+
+      const price = await this.stripe.prices.create({
+        product: product.id,
+        unit_amount: input.amount,
+        currency: normalizeCurrency(input.currency ?? this.currency),
+        recurring,
+        metadata: input.metadata,
+      });
+
+      return {
+        id: price.id,
+        name: input.name,
+        amount: input.amount,
+        currency: price.currency,
+        interval: input.interval,
+        provider: this.name,
+        usageType,
+        aggregateUsage,
+        productId: product.id,
+      };
+    });
   }
 
   async updatePlan(input: UpdatePlanInput): Promise<Plan> {
-    const price = await this.stripe.prices.retrieve(input.planId);
-    const productId =
-      typeof price.product === "string" ? price.product : price.product.id;
+    return withStripeErrors(async () => {
+      const price = await this.stripe.prices.retrieve(input.planId);
+      const productId =
+        typeof price.product === "string" ? price.product : price.product.id;
 
-    const product = await this.stripe.products.update(productId, {
-      name: input.name,
-      description: input.description,
-      active: input.active,
+      const product = await this.stripe.products.update(productId, {
+        name: input.name,
+        description: input.description,
+        active: input.active,
+      });
+
+      return {
+        id: price.id,
+        name: product.name,
+        amount: price.unit_amount ?? 0,
+        currency: price.currency,
+        interval: mapIntervalFromStripe(
+          price.recurring?.interval,
+          price.recurring?.interval_count,
+        ),
+        provider: this.name,
+        usageType: (price.recurring?.usage_type as UsageType | undefined) ?? "licensed",
+        aggregateUsage: price.recurring?.aggregate_usage as AggregateUsage | undefined,
+        productId,
+      };
     });
-
-    return {
-      id: price.id,
-      name: product.name,
-      amount: price.unit_amount ?? 0,
-      currency: price.currency,
-      interval: "monthly",
-      provider: this.name,
-    };
   }
 
   async cancelPlan(planId: string): Promise<Plan> {
-    const price = await this.stripe.prices.retrieve(planId);
-    const productId =
-      typeof price.product === "string" ? price.product : price.product.id;
+    return withStripeErrors(async () => {
+      const price = await this.stripe.prices.retrieve(planId);
+      const productId =
+        typeof price.product === "string" ? price.product : price.product.id;
 
-    const product = await this.stripe.products.update(productId, { active: false });
+      const product = await this.stripe.products.update(productId, { active: false });
 
-    return {
-      id: price.id,
-      name: product.name,
-      amount: price.unit_amount ?? 0,
-      currency: price.currency,
-      interval: "monthly",
-      provider: this.name,
-    };
+      return {
+        id: price.id,
+        name: product.name,
+        amount: price.unit_amount ?? 0,
+        currency: price.currency,
+        interval: mapIntervalFromStripe(
+          price.recurring?.interval,
+          price.recurring?.interval_count,
+        ),
+        provider: this.name,
+        usageType: (price.recurring?.usage_type as UsageType | undefined) ?? "licensed",
+        aggregateUsage: price.recurring?.aggregate_usage as AggregateUsage | undefined,
+        productId,
+      };
+    });
   }
 
   async createSubscription(input: CreateSubscriptionInput): Promise<Subscription> {
-    const subscription = await this.stripe.subscriptions.create({
-      customer: input.customerId,
-      items: [{ price: input.planId }],
-      trial_period_days: input.trialDays,
-      metadata: input.metadata,
-    });
+    return withStripeErrors(async () => {
+      const subscription = await this.stripe.subscriptions.create({
+        customer: input.customerId,
+        items: [{ price: input.planId }],
+        trial_period_days: input.trialDays,
+        metadata: input.metadata,
+        default_payment_method: input.defaultPaymentMethodId,
+      });
 
-    return {
-      id: subscription.id,
-      customerId:
-        typeof subscription.customer === "string"
-          ? subscription.customer
-          : subscription.customer.id,
-      planId: input.planId,
-      status: subscription.status,
-      currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      provider: this.name,
-    };
+      return mapSubscription(subscription, input.planId);
+    });
   }
 
   async cancelSubscription(subscriptionId: string): Promise<Subscription> {
-    const subscription = await this.stripe.subscriptions.update(subscriptionId, {
-      cancel_at_period_end: true,
-    });
+    return withStripeErrors(async () => {
+      const subscription = await this.stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: true,
+      });
 
-    return {
-      id: subscription.id,
-      customerId:
-        typeof subscription.customer === "string"
-          ? subscription.customer
-          : subscription.customer.id,
-      planId: subscription.items.data[0]?.price.id ?? "",
-      status: subscription.status,
-      currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      provider: this.name,
-    };
+      return mapSubscription(subscription);
+    });
   }
 
   async renewSubscription(subscriptionId: string): Promise<Subscription> {
-    const subscription = await this.stripe.subscriptions.update(subscriptionId, {
-      cancel_at_period_end: false,
-    });
+    return withStripeErrors(async () => {
+      const subscription = await this.stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: false,
+      });
 
-    return {
-      id: subscription.id,
-      customerId:
-        typeof subscription.customer === "string"
-          ? subscription.customer
-          : subscription.customer.id,
-      planId: subscription.items.data[0]?.price.id ?? "",
-      status: subscription.status,
-      currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
-      provider: this.name,
-    };
+      return mapSubscription(subscription);
+    });
+  }
+
+  async pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
+    return withStripeErrors(async () => {
+      const pauseCollection: Stripe.SubscriptionUpdateParams.PauseCollection = {
+        behavior: input.behavior ?? "mark_uncollectible",
+      };
+
+      if (input.resumesAt) {
+        pauseCollection.resumes_at = Math.floor(input.resumesAt.getTime() / 1000);
+      }
+
+      const subscription = await this.stripe.subscriptions.update(input.subscriptionId, {
+        pause_collection: pauseCollection,
+      });
+
+      return mapSubscription(subscription);
+    });
+  }
+
+  async resumeSubscription(subscriptionId: string): Promise<Subscription> {
+    return withStripeErrors(async () => {
+      const subscription = await this.stripe.subscriptions.update(subscriptionId, {
+        pause_collection: "",
+      });
+
+      return mapSubscription(subscription);
+    });
+  }
+
+  async retrieveSubscription(subscriptionId: string): Promise<Subscription> {
+    return withStripeErrors(async () => {
+      const subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
+      return mapSubscription(subscription);
+    });
+  }
+
+  async createCustomer(input: CreateProviderCustomerInput): Promise<ProviderCustomer> {
+    return withStripeErrors(async () => {
+      const customer = await this.stripe.customers.create({
+        email: input.email,
+        name: input.name,
+        phone: input.phone,
+        description: input.description,
+        metadata: input.metadata,
+        payment_method: input.paymentMethodId,
+        invoice_settings:
+          input.paymentMethodId && input.setAsDefaultPaymentMethod !== false
+            ? { default_payment_method: input.paymentMethodId }
+            : undefined,
+      });
+
+      const defaultPm = customer.invoice_settings?.default_payment_method;
+
+      return {
+        id: customer.id,
+        email: customer.email,
+        name: customer.name,
+        phone: customer.phone,
+        defaultPaymentMethodId:
+          typeof defaultPm === "string" ? defaultPm : defaultPm?.id ?? null,
+        provider: this.name,
+        metadata: customer.metadata as Record<string, string>,
+      };
+    });
+  }
+
+  async attachPaymentMethod(
+    input: AttachPaymentMethodInput,
+  ): Promise<PaymentMethodResult> {
+    return withStripeErrors(async () => {
+      const paymentMethod = await this.stripe.paymentMethods.attach(
+        input.paymentMethodId,
+        { customer: input.customerId },
+      );
+
+      return {
+        id: paymentMethod.id,
+        customerId: input.customerId,
+        type: paymentMethod.type,
+        provider: this.name,
+      };
+    });
+  }
+
+  async setDefaultPaymentMethod(
+    input: SetDefaultPaymentMethodInput,
+  ): Promise<ProviderCustomer> {
+    return withStripeErrors(async () => {
+      const customer = await this.stripe.customers.update(input.customerId, {
+        invoice_settings: {
+          default_payment_method: input.paymentMethodId,
+        },
+      });
+
+      const defaultPm = customer.invoice_settings?.default_payment_method;
+
+      return {
+        id: customer.id,
+        email: customer.email,
+        name: customer.name,
+        phone: customer.phone,
+        defaultPaymentMethodId:
+          typeof defaultPm === "string" ? defaultPm : defaultPm?.id ?? null,
+        provider: this.name,
+        metadata: customer.metadata as Record<string, string>,
+      };
+    });
+  }
+
+  async retrieveProviderInvoice(invoiceId: string): Promise<ProviderInvoice> {
+    return withStripeErrors(async () => {
+      const invoice = await this.stripe.invoices.retrieve(invoiceId);
+      const customerId =
+        typeof invoice.customer === "string"
+          ? invoice.customer
+          : invoice.customer?.id ?? "";
+      const subscriptionId =
+        typeof invoice.subscription === "string"
+          ? invoice.subscription
+          : invoice.subscription?.id ?? null;
+
+      return {
+        id: invoice.id,
+        customerId,
+        status: invoice.status,
+        amountDue: invoice.amount_due,
+        amountPaid: invoice.amount_paid,
+        currency: invoice.currency,
+        hostedInvoiceUrl: invoice.hosted_invoice_url,
+        invoicePdfUrl: invoice.invoice_pdf,
+        subscriptionId,
+        provider: this.name,
+      };
+    });
+  }
+
+  async reportUsage(input: ReportUsageInput): Promise<UsageRecord> {
+    return withStripeErrors(async () => {
+      const record = await this.stripe.subscriptionItems.createUsageRecord(
+        input.subscriptionItemId,
+        {
+          quantity: input.quantity,
+          timestamp: input.timestamp
+            ? Math.floor(input.timestamp.getTime() / 1000)
+            : undefined,
+          action: input.action,
+        },
+      );
+
+      return {
+        id: record.id,
+        subscriptionItemId: input.subscriptionItemId,
+        quantity: record.quantity,
+        timestamp: new Date(record.timestamp * 1000),
+        provider: this.name,
+      };
+    });
   }
 
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
@@ -286,8 +511,7 @@ export class StripeGateway implements PaymentGateway {
         data: event.data.object,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Webhook verification failed";
-      throw new WebhookVerificationError(message);
+      mapStripeError(error);
     }
   }
 }

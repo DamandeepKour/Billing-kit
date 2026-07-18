@@ -11,7 +11,7 @@ npm install billing-kit
 - Invoice generation with line items, discounts, tax, and PDF export
 - Payments — create, capture, cancel, status
 - Refunds — full and partial
-- Subscriptions — plans, create, cancel, renew (monthly / quarterly / yearly)
+- Subscriptions — plans, create, cancel, renew, pause / resume (Stripe); monthly / quarterly / yearly + metered
 - Webhooks — signature verification for Stripe and Razorpay
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
 - Coupons — percentage and flat discounts
@@ -23,7 +23,7 @@ npm install billing-kit
 
 | Provider | Config | Notes |
 |----------|--------|--------|
-| **Stripe** | `provider: "stripe"`, `secretKey` | PaymentIntents, invoices, subscriptions, refunds, webhooks |
+| **Stripe** | `provider: "stripe"`, `secretKey` | PaymentIntents, Prices/subscriptions, customers, hosted invoices, metered usage, refunds, webhooks |
 | **Razorpay** | `provider: "razorpay"`, `keyId`, `secretKey` | Orders, captures, plans, subscriptions, refunds, webhooks |
 
 ```typescript
@@ -144,7 +144,87 @@ Line items that set `currency` must match the invoice currency, or `CurrencyMism
 
 ## Subscriptions
 
-Create a plan, subscribe a customer, then cancel or renew. Recurring charges and invoice.paid events usually arrive via webhooks — see [Webhook verification](#webhook-verification).
+Create a recurring plan (Stripe Price / Razorpay Plan), subscribe a customer, then cancel, renew, pause, or resume. Recurring charges and `invoice.paid` events usually arrive via webhooks — see [Webhook verification](#webhook-verification).
+
+### Monthly and yearly plans (Stripe)
+
+```typescript
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  currency: "usd",
+});
+
+// Monthly — creates a Stripe Product + recurring Price (interval: month)
+const monthly = await billing.createPlan({
+  name: "Pro Monthly",
+  amount: 2900, // $29.00
+  currency: "usd",
+  interval: "monthly",
+});
+
+// Yearly — recurring Price with interval: year
+const yearly = await billing.createPlan({
+  name: "Pro Yearly",
+  amount: 29000, // $290.00
+  currency: "usd",
+  interval: "yearly",
+});
+
+const customer = await billing.createCustomer({
+  email: "user@example.com",
+  name: "Jane Doe",
+  paymentMethodId: "pm_xxx", // optional — attach + set as default
+});
+
+const subscription = await billing.createSubscription({
+  customerId: customer.id,
+  planId: monthly.id, // or yearly.id
+  trialDays: 14,
+  defaultPaymentMethodId: "pm_xxx",
+});
+
+await billing.retrieveSubscription(subscription.id);
+await billing.pauseSubscription({ subscriptionId: subscription.id });
+await billing.resumeSubscription(subscription.id);
+await billing.cancelSubscription(subscription.id); // cancel at period end
+await billing.renewSubscription(subscription.id);  // clear cancel-at-period-end
+```
+
+### Metered / usage-based billing (Stripe)
+
+```typescript
+const metered = await billing.createPlan({
+  name: "API Calls",
+  amount: 1, // $0.01 per unit
+  currency: "usd",
+  interval: "monthly",
+  usageType: "metered",
+  aggregateUsage: "sum",
+});
+
+const sub = await billing.createSubscription({
+  customerId: customer.id,
+  planId: metered.id,
+});
+
+await billing.reportUsage({
+  subscriptionItemId: sub.subscriptionItemId!,
+  quantity: 500,
+  action: "increment",
+});
+```
+
+### Hosted Stripe invoices
+
+```typescript
+// Provider invoice (Stripe), not a local billing-kit invoice
+const invoice = await billing.retrieveProviderInvoice("in_xxx");
+console.log(invoice.hostedInvoiceUrl); // customer-facing hosted page
+console.log(invoice.invoicePdfUrl);
+```
+
+### Shared subscription API
 
 ```typescript
 // Plan (monthly | quarterly | yearly)
@@ -173,10 +253,17 @@ const renewed = await billing.renewSubscription(subscription.id);
 
 | Method | Behavior |
 |--------|----------|
-| `createPlan` | Creates a recurring price/plan on the selected provider |
+| `createPlan` | Creates a recurring price/plan (`usageType: "metered"` for usage billing on Stripe) |
 | `createSubscription` | Starts billing for a customer on that plan |
 | `cancelSubscription` | Schedules cancel at period end |
 | `renewSubscription` | Clears cancel-at-period-end so billing continues |
+| `pauseSubscription` | Stripe only — pause collection |
+| `resumeSubscription` | Stripe only — resume collection |
+| `retrieveSubscription` | Stripe only — fetch subscription |
+| `createCustomer` | Stripe only — create Customer |
+| `attachPaymentMethod` / `setDefaultPaymentMethod` | Stripe only |
+| `retrieveProviderInvoice` | Stripe only — hosted invoice URL + PDF |
+| `reportUsage` | Stripe only — metered usage records |
 
 Full flow: [`examples/stripe/subscriptions.ts`](./examples/stripe/subscriptions.ts), [`examples/razorpay/subscriptions.ts`](./examples/razorpay/subscriptions.ts)
 
@@ -458,6 +545,10 @@ try {
 |-------|------|
 | `InvalidConfigError` | `INVALID_CONFIG` |
 | `PaymentError` | `PAYMENT_ERROR` |
+| `StripeCardError` | `STRIPE_CARD_ERROR` |
+| `StripeAuthenticationError` | `STRIPE_AUTHENTICATION_ERROR` |
+| `StripeInvalidRequestError` | `STRIPE_INVALID_REQUEST` |
+| `UnsupportedOperationError` | `UNSUPPORTED_OPERATION` |
 | `CouponError` | `COUPON_ERROR` |
 | `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` |
 | `CurrencyMismatchError` | `CURRENCY_MISMATCH` |
@@ -473,6 +564,7 @@ try {
 | Payment | `createPayment`, `capturePayment`, `cancelPayment`, `getPaymentStatus` |
 | Refund | `refundPayment` |
 | Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `cancelSubscription`, `renewSubscription` |
+| Stripe billing | `pauseSubscription`, `resumeSubscription`, `retrieveSubscription`, `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `applyCoupon`, `validateCoupon` |
 | Transaction | `recordTransaction`, `getTransaction` |
@@ -498,13 +590,14 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Pluggable invoice / transaction repositories |
 | Done | Tax engine (GST / VAT / sales tax, autoTax, tax lines) |
 | Done | Multi-currency (INR, USD, EUR, GBP, AED, SGD) |
+| Done | Stripe customers, pause/resume, hosted invoices, metered usage |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |
 | Next | Subpath exports (`billing-kit/tax`, `billing-kit/invoice`) |
 | Later | Additional gateways (PayPal, Cashfree) |
 | Later | Proration helpers for mid-cycle plan changes |
-| Later | Usage / metered billing calculators |
+| Later | Additional usage / metered billing calculators |
 
 ## Scripts
 

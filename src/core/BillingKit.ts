@@ -14,11 +14,22 @@ import type {
 } from "../types/payment";
 import type { GeneratePdfInput } from "../types/pdf";
 import type {
+  AttachPaymentMethodInput,
+  CreateProviderCustomerInput,
+  PaymentMethodResult,
+  ProviderCustomer,
+  ProviderInvoice,
+  SetDefaultPaymentMethodInput,
+} from "../types/provider";
+import type {
   CreatePlanInput,
   CreateSubscriptionInput,
+  PauseSubscriptionInput,
   Plan,
+  ReportUsageInput,
   Subscription,
   UpdatePlanInput,
+  UsageRecord,
 } from "../types/subscription";
 import type {
   GSTInput,
@@ -149,6 +160,51 @@ export class BillingKit {
 
   renewSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.renewSubscription(subscriptionId);
+  }
+
+  /** Stripe only — pause collection on a subscription. */
+  pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
+    return this.subscriptionService.pauseSubscription(input);
+  }
+
+  /** Stripe only — resume a paused subscription. */
+  resumeSubscription(subscriptionId: string): Promise<Subscription> {
+    return this.subscriptionService.resumeSubscription(subscriptionId);
+  }
+
+  /** Stripe only — fetch the latest subscription state. */
+  retrieveSubscription(subscriptionId: string): Promise<Subscription> {
+    return this.subscriptionService.retrieveSubscription(subscriptionId);
+  }
+
+  /** Stripe only — create a Customer. */
+  createCustomer(input: CreateProviderCustomerInput): Promise<ProviderCustomer> {
+    return this.subscriptionService.createCustomer(input);
+  }
+
+  /** Stripe only — attach a PaymentMethod to a Customer. */
+  attachPaymentMethod(input: AttachPaymentMethodInput): Promise<PaymentMethodResult> {
+    return this.subscriptionService.attachPaymentMethod(input);
+  }
+
+  /** Stripe only — set the Customer's default PaymentMethod. */
+  setDefaultPaymentMethod(
+    input: SetDefaultPaymentMethodInput,
+  ): Promise<ProviderCustomer> {
+    return this.subscriptionService.setDefaultPaymentMethod(input);
+  }
+
+  /**
+   * Stripe only — retrieve a Stripe Invoice (includes `hostedInvoiceUrl` / PDF URL).
+   * Distinct from local `getInvoice` (billing-kit invoice store).
+   */
+  retrieveProviderInvoice(invoiceId: string): Promise<ProviderInvoice> {
+    return this.subscriptionService.retrieveProviderInvoice(invoiceId);
+  }
+
+  /** Stripe only — report usage for a metered subscription item. */
+  reportUsage(input: ReportUsageInput): Promise<UsageRecord> {
+    return this.subscriptionService.reportUsage(input);
   }
 
   calculateGST(input: GSTInput): TaxBreakdown {
