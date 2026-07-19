@@ -8,14 +8,35 @@ import type {
   VATInput,
 } from "../types/tax";
 import { roundAmount } from "../utils/currency";
-
 const EU_COUNTRIES = new Set([
-  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU",
-  "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES",
+  "AT",
+  "BE",
+  "BG",
+  "HR",
+  "CY",
+  "CZ",
+  "DK",
+  "EE",
+  "FI",
+  "FR",
+  "DE",
+  "GR",
+  "HU",
+  "IE",
+  "IT",
+  "LV",
+  "LT",
+  "LU",
+  "MT",
+  "NL",
+  "PL",
+  "PT",
+  "RO",
+  "SK",
+  "SI",
+  "ES",
   "SE",
 ]);
-
-/** Simplified US state sales-tax rates (%) for autoTax demos */
 const US_SALES_TAX_RATES: Record<string, number> = {
   CA: 7.25,
   NY: 8,
@@ -23,7 +44,6 @@ const US_SALES_TAX_RATES: Record<string, number> = {
   FL: 6,
   WA: 6.5,
 };
-
 const EU_VAT_RATES: Record<string, number> = {
   DE: 19,
   FR: 20,
@@ -33,7 +53,6 @@ const EU_VAT_RATES: Record<string, number> = {
   IT: 22,
   default: 20,
 };
-
 function emptyBreakdown(
   amount: number,
   extras: Partial<TaxBreakdown> = {},
@@ -53,32 +72,26 @@ function emptyBreakdown(
     ...extras,
   };
 }
-
 function assertNonNegative(amount: number, rate: number): void {
   if (amount < 0 || rate < 0) {
     throw new Error("Amount and rate must be non-negative");
   }
 }
-
 function normalizeCode(value?: string): string {
   return (value ?? "").trim().toUpperCase();
 }
-
 export function calculateGST(input: GSTInput): TaxBreakdown {
   const { amount, sellerState, buyerState } = input;
   const rate = input.rate ?? 0;
   assertNonNegative(amount, rate);
-
   const seller = normalizeCode(sellerState);
   const buyer = normalizeCode(buyerState);
   const totalTax = roundAmount((amount * rate) / 100);
   const sameState = seller === buyer && seller.length > 0;
-
   let cgst = 0;
   let sgst = 0;
   let igst = 0;
   const taxLines: TaxLine[] = [];
-
   if (sameState && totalTax > 0) {
     const halfRate = rate / 2;
     cgst = roundAmount(totalTax / 2);
@@ -91,7 +104,6 @@ export function calculateGST(input: GSTInput): TaxBreakdown {
     igst = totalTax;
     taxLines.push({ name: "IGST", rate, amount: igst });
   }
-
   return {
     taxableAmount: amount,
     taxPercent: rate,
@@ -110,27 +122,19 @@ export function calculateGST(input: GSTInput): TaxBreakdown {
     buyerState: buyer,
   };
 }
-
 export function calculateVAT(input: VATInput): TaxBreakdown {
   const { amount } = input;
   let rate = input.rate ?? 0;
   assertNonNegative(amount, rate);
-
   const country = normalizeCode(input.country);
   const taxId = input.customerTaxId?.trim();
   const reverseCharge =
-    Boolean(input.isBusinessCustomer && taxId) &&
-    country.length > 0 &&
-    country !== "IN";
-
+    Boolean(input.isBusinessCustomer && taxId) && country.length > 0 && country !== "IN";
   if (reverseCharge) {
     rate = 0;
   }
-
   const vat = roundAmount((amount * rate) / 100);
-  const taxLines: TaxLine[] =
-    vat > 0 ? [{ name: "VAT", rate, amount: vat }] : [];
-
+  const taxLines: TaxLine[] = vat > 0 ? [{ name: "VAT", rate, amount: vat }] : [];
   return {
     taxableAmount: amount,
     taxPercent: rate,
@@ -147,16 +151,13 @@ export function calculateVAT(input: VATInput): TaxBreakdown {
     reverseCharge,
   };
 }
-
 export function calculateSalesTax(input: SalesTaxInput): TaxBreakdown {
   const { amount, state } = input;
   const rate = input.rate ?? US_SALES_TAX_RATES[normalizeCode(state)] ?? 0;
   assertNonNegative(amount, rate);
-
   const salesTax = roundAmount((amount * rate) / 100);
   const taxLines: TaxLine[] =
     salesTax > 0 ? [{ name: "Sales Tax", rate, amount: salesTax }] : [];
-
   return {
     taxableAmount: amount,
     taxPercent: rate,
@@ -174,7 +175,6 @@ export function calculateSalesTax(input: SalesTaxInput): TaxBreakdown {
     buyerState: normalizeCode(state),
   };
 }
-
 function detectTaxType(country?: string, explicit?: TaxType): TaxType {
   if (explicit && explicit !== "none") return explicit;
   const code = normalizeCode(country);
@@ -184,7 +184,6 @@ function detectTaxType(country?: string, explicit?: TaxType): TaxType {
   if (EU_COUNTRIES.has(code)) return "vat";
   return "vat";
 }
-
 function defaultRateFor(taxType: TaxType, country?: string, state?: string): number {
   if (taxType === "gst") return 18;
   if (taxType === "sales_tax") {
@@ -196,15 +195,12 @@ function defaultRateFor(taxType: TaxType, country?: string, state?: string): num
   }
   return 0;
 }
-
 export class TaxEngine {
   calculate(input: TaxCalculationInput): TaxBreakdown {
     assertNonNegative(input.amount, input.rate ?? 0);
-
     if (input.amount === 0) {
       return emptyBreakdown(0);
     }
-
     const autoTax = input.autoTax === true;
     const country = normalizeCode(input.country);
     const buyerState = normalizeCode(
@@ -212,12 +208,10 @@ export class TaxEngine {
     );
     const sellerState = normalizeCode(input.sellerState);
     const placeOfSupply = normalizeCode(input.placeOfSupply) || buyerState;
-
     let taxType: TaxType = input.taxType ?? "none";
     if (autoTax || (!input.taxType && country)) {
       taxType = detectTaxType(country, input.taxType);
     }
-
     if (taxType === "none") {
       return emptyBreakdown(input.amount, {
         country: country || undefined,
@@ -226,10 +220,7 @@ export class TaxEngine {
         buyerState: buyerState || undefined,
       });
     }
-
-    const rate =
-      input.rate ?? defaultRateFor(taxType, country || undefined, buyerState);
-
+    const rate = input.rate ?? defaultRateFor(taxType, country || undefined, buyerState);
     if (taxType === "gst") {
       return calculateGST({
         amount: input.amount,
@@ -238,7 +229,6 @@ export class TaxEngine {
         buyerState: placeOfSupply || buyerState,
       });
     }
-
     if (taxType === "sales_tax") {
       return calculateSalesTax({
         amount: input.amount,
@@ -247,7 +237,6 @@ export class TaxEngine {
         country: country || "US",
       });
     }
-
     return calculateVAT({
       amount: input.amount,
       rate,
@@ -257,22 +246,17 @@ export class TaxEngine {
     });
   }
 }
-
 export class TaxService {
   private readonly engine = new TaxEngine();
-
   calculate(input: TaxCalculationInput): TaxBreakdown {
     return this.engine.calculate(input);
   }
-
   calculateGST(input: GSTInput): TaxBreakdown {
     return calculateGST(input);
   }
-
   calculateVAT(input: VATInput): TaxBreakdown {
     return calculateVAT(input);
   }
-
   calculateSalesTax(input: SalesTaxInput): TaxBreakdown {
     return calculateSalesTax(input);
   }

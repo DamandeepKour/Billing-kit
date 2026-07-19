@@ -1,16 +1,9 @@
-/**
- * Stripe — create, capture, refund a payment.
- *
- * Requires STRIPE_SECRET_KEY (test mode).
- */
 import { BillingKit, TransactionType } from "../../src";
-
 const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
   currency: "inr",
 });
-
 async function run(): Promise<void> {
   const payment = await billing.createPayment({
     amount: 99900,
@@ -18,10 +11,7 @@ async function run(): Promise<void> {
     description: "Pro plan",
     metadata: { orderId: "order_1001" },
   });
-
   console.log("created:", payment.id, payment.status);
-
-  // Capture if authorized (manual capture)
   if (payment.status === "authorized" || payment.status === "pending") {
     const captured = await billing.capturePayment({
       paymentId: payment.id,
@@ -29,17 +19,13 @@ async function run(): Promise<void> {
     });
     console.log("captured:", captured.status);
   }
-
   const status = await billing.getPaymentStatus(payment.id);
   console.log("status:", status.status);
-
-  // Partial refund
   const refund = await billing.refundPayment({
     paymentId: payment.id,
     amount: 20000,
     reason: "requested_by_customer",
   });
-
   await billing.recordTransaction({
     type: TransactionType.REFUND,
     amount: refund.amount,
@@ -47,10 +33,8 @@ async function run(): Promise<void> {
     referenceId: refund.id,
     metadata: { paymentId: payment.id },
   });
-
   console.log("refund:", refund.id, refund.status);
 }
-
 run().catch((err) => {
   console.error(err);
   process.exit(1);

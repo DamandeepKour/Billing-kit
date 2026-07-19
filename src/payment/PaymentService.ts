@@ -13,7 +13,6 @@ import type {
 } from "../types/payment";
 import { resolveCurrency } from "../utils/currency";
 import { UnsupportedOperationError } from "../utils/stripe-errors";
-
 function isRazorpayBillingProvider(
   gateway: PaymentGateway,
 ): gateway is PaymentGateway & RazorpayBillingProvider {
@@ -24,45 +23,33 @@ function isRazorpayBillingProvider(
     typeof candidate.verifyPaymentSignature === "function"
   );
 }
-
 export class PaymentService {
   constructor(
     private readonly gateway: PaymentGateway,
     private readonly defaultCurrency?: string,
   ) {}
-
   createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
     const currency = resolveCurrency({
       override: input.currency,
       configDefault: this.defaultCurrency,
     });
-
     return this.gateway.createPayment({ ...input, currency });
   }
-
   capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
     return this.gateway.capturePayment(input);
   }
-
   cancelPayment(paymentId: string): Promise<PaymentResult> {
     return this.gateway.cancelPayment(paymentId);
   }
-
   getPaymentStatus(paymentId: string): Promise<PaymentResult> {
     return this.gateway.getPaymentStatus(paymentId);
   }
-
   private requireRazorpay(): PaymentGateway & RazorpayBillingProvider {
     if (!isRazorpayBillingProvider(this.gateway)) {
-      throw new UnsupportedOperationError(
-        "Razorpay billing helpers",
-        this.gateway.name,
-      );
+      throw new UnsupportedOperationError("Razorpay billing helpers", this.gateway.name);
     }
     return this.gateway;
   }
-
-  /** Razorpay only — create an Order before Checkout / capture. */
   async createOrder(input: CreateOrderInput): Promise<OrderResult> {
     const currency = resolveCurrency({
       override: input.currency,
@@ -70,18 +57,12 @@ export class PaymentService {
     });
     return this.requireRazorpay().createOrder({ ...input, currency });
   }
-
-  /** Razorpay only — verify Checkout payment signature (`orderId|paymentId`). */
   verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean {
     return this.requireRazorpay().verifyPaymentSignature(input);
   }
-
-  /** Razorpay only — fetch a payment by id. */
   async fetchPayment(paymentId: string): Promise<PaymentResult> {
     return this.requireRazorpay().fetchPayment(paymentId);
   }
-
-  /** Razorpay only — fetch a refund by id. */
   async fetchRefund(refundId: string): Promise<RefundResult> {
     return this.requireRazorpay().fetchRefund(refundId);
   }

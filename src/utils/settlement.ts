@@ -3,8 +3,6 @@ import type {
   FeeBreakdown,
   SettlementFields,
 } from "../types/settlement";
-
-/** Compute net settlement: gross − fee − taxOnFee. */
 export function calculateFeeBreakdown(input: {
   gross: number;
   fee: number;
@@ -18,7 +16,6 @@ export function calculateFeeBreakdown(input: {
     net: input.gross - input.fee - taxOnFee,
   };
 }
-
 export interface NormalizeSettlementInput {
   amount: number;
   currency: string;
@@ -27,25 +24,20 @@ export interface NormalizeSettlementInput {
   presentmentAmount?: number;
   settlementAmount?: number;
   exchangeRate?: ExchangeRateMetadata;
-  fees?: Partial<FeeBreakdown> & { gross?: number; fee?: number };
+  fees?: Partial<FeeBreakdown> & {
+    gross?: number;
+    fee?: number;
+  };
   providerResponse?: Record<string, unknown>;
 }
-
-/**
- * Fill presentment/settlement defaults and ensure fee.net is consistent.
- * When settlement fields are omitted, settlement === presentment (no FX).
- */
 export function normalizeSettlementFields(
   input: NormalizeSettlementInput,
 ): SettlementFields {
-  const presentmentCurrency = (
-    input.presentmentCurrency ?? input.currency
-  ).toLowerCase();
+  const presentmentCurrency = (input.presentmentCurrency ?? input.currency).toLowerCase();
   const settlementCurrency = (
     input.settlementCurrency ?? presentmentCurrency
   ).toLowerCase();
   const presentmentAmount = input.presentmentAmount ?? input.amount;
-
   let fees: FeeBreakdown | undefined;
   if (input.fees) {
     const gross = input.fees.gross ?? input.settlementAmount ?? presentmentAmount;
@@ -61,10 +53,7 @@ export function normalizeSettlementFields(
           }
         : calculateFeeBreakdown({ gross, fee, taxOnFee });
   }
-
-  const settlementAmount =
-    input.settlementAmount ?? fees?.net ?? presentmentAmount;
-
+  const settlementAmount = input.settlementAmount ?? fees?.net ?? presentmentAmount;
   return {
     presentmentCurrency,
     settlementCurrency,

@@ -1,5 +1,4 @@
 export type CouponType = "percentage" | "flat";
-
 export interface Coupon {
   code: string;
   type: CouponType;
@@ -9,12 +8,10 @@ export interface Coupon {
   expiresAt?: Date;
   active?: boolean;
 }
-
 export interface ApplyCouponInput {
   amount: number;
   coupon: Coupon;
 }
-
 export interface CouponResult {
   originalAmount: number;
   discountAmount: number;

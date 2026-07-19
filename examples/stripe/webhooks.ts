@@ -1,22 +1,9 @@
-/**
- * Stripe webhooks — verify signature and handle billing events.
- *
- *   app.post("/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookHandler)
- *
- * Dashboard → Developers → Webhooks → signing secret (whsec_...)
- */
-import {
-  BillingKit,
-  TransactionType,
-  type WebhookEvent,
-} from "../../src";
-
+import { BillingKit, TransactionType, type WebhookEvent } from "../../src";
 const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
 });
-
 type StripeObject = {
   id: string;
   amount?: number;
@@ -24,10 +11,8 @@ type StripeObject = {
   customer?: string;
   subscription?: string;
 };
-
 async function handleStripeEvent(event: WebhookEvent): Promise<void> {
   const data = event.data as StripeObject;
-
   switch (event.type) {
     case "payment_intent.succeeded":
     case "invoice.paid":
@@ -42,18 +27,14 @@ async function handleStripeEvent(event: WebhookEvent): Promise<void> {
         },
       });
       break;
-
     case "payment_intent.payment_failed":
     case "invoice.payment_failed":
       break;
-
     case "customer.subscription.created":
     case "customer.subscription.updated":
       break;
-
     case "customer.subscription.deleted":
       break;
-
     case "charge.refunded":
       await billing.recordTransaction({
         type: TransactionType.REFUND,
@@ -62,7 +43,6 @@ async function handleStripeEvent(event: WebhookEvent): Promise<void> {
         referenceId: data.id,
       });
       break;
-
     case "charge.dispute.created":
       await billing.recordTransaction({
         type: TransactionType.CHARGEBACK,
@@ -71,14 +51,15 @@ async function handleStripeEvent(event: WebhookEvent): Promise<void> {
         referenceId: data.id,
       });
       break;
-
     default:
       break;
   }
 }
-
 export async function stripeWebhookHandler(
-  req: { body: Buffer; headers: Record<string, string | string[] | undefined> },
+  req: {
+    body: Buffer;
+    headers: Record<string, string | string[] | undefined>;
+  },
   res: {
     status: (code: number) => {
       send: (body: string) => void;
@@ -91,7 +72,6 @@ export async function stripeWebhookHandler(
     res.status(400).send("Missing Stripe-Signature header");
     return;
   }
-
   try {
     const event = billing.verifyWebhook(req.body, signature);
     await handleStripeEvent(event);

@@ -22,11 +22,7 @@ export type {
   RefundPaymentInput,
   RefundResult,
 } from "./payment";
-export type {
-  CreateOrderInput,
-  OrderResult,
-  VerifyPaymentSignatureInput,
-} from "./order";
+export type { CreateOrderInput, OrderResult, VerifyPaymentSignatureInput } from "./order";
 export type {
   NormalizedWebhookType,
   RazorpayWebhookEventName,
@@ -66,12 +62,7 @@ export type {
   TaxType,
   VATInput,
 } from "./tax";
-export type {
-  ApplyCouponInput,
-  Coupon,
-  CouponResult,
-  CouponType,
-} from "./coupon";
+export type { ApplyCouponInput, Coupon, CouponResult, CouponType } from "./coupon";
 export { TransactionType, TransactionStatus } from "./transaction";
 export type { RecordTransactionInput, Transaction } from "./transaction";
 export type {

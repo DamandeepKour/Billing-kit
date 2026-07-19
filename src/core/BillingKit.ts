@@ -1,10 +1,6 @@
 import type { BillingKitConfig } from "../types/config";
 import type { ApplyCouponInput, Coupon, CouponResult } from "../types/coupon";
-import type {
-  GenerateInvoiceInput,
-  Invoice,
-  InvoiceSummary,
-} from "../types/invoice";
+import type { GenerateInvoiceInput, Invoice, InvoiceSummary } from "../types/invoice";
 import type {
   CapturePaymentInput,
   CreatePaymentInput,
@@ -36,16 +32,8 @@ import type {
   UpdatePlanInput,
   UsageRecord,
 } from "../types/subscription";
-import type {
-  GSTInput,
-  TaxBreakdown,
-  TaxCalculationInput,
-  VATInput,
-} from "../types/tax";
-import type {
-  RecordTransactionInput,
-  Transaction,
-} from "../types/transaction";
+import type { GSTInput, TaxBreakdown, TaxCalculationInput, VATInput } from "../types/tax";
+import type { RecordTransactionInput, Transaction } from "../types/transaction";
 import type { ReportingFilter } from "../types/settlement";
 import type { WebhookEvent } from "../types/webhook";
 import { CouponService } from "../coupon";
@@ -62,7 +50,6 @@ import { TaxService } from "../tax";
 import { TransactionService } from "../transaction";
 import { InvalidConfigError } from "../utils/errors";
 import { WebhookService } from "../webhook";
-
 export class BillingKit {
   private readonly config: BillingKitConfig;
   private readonly invoiceService: InvoiceService;
@@ -74,29 +61,23 @@ export class BillingKit {
   private readonly transactionService: TransactionService;
   private readonly webhookService: WebhookService;
   private readonly pdfGenerator: InvoicePdfGenerator;
-
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
       throw new InvalidConfigError("secretKey is required");
     }
-
     if (config.provider === "razorpay" && !config.keyId) {
       throw new InvalidConfigError("keyId is required for Razorpay");
     }
-
     this.config = {
       currency: "inr",
       ...config,
     };
-
     const invoiceRepository =
       this.config.invoiceRepository ?? new InMemoryInvoiceRepository();
     const transactionRepository =
       this.config.transactionRepository ?? new InMemoryTransactionRepository();
-
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
-
     this.invoiceService = new InvoiceService(this.config, invoiceRepository);
     this.paymentService = new PaymentService(gateway, this.config.currency);
     this.refundService = new RefundService(gateway);
@@ -107,179 +88,123 @@ export class BillingKit {
     this.webhookService = new WebhookService(gateway);
     this.pdfGenerator = new InvoicePdfGenerator(this.config);
   }
-
   generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
     return this.invoiceService.generateInvoice(input);
   }
-
   getInvoiceSummary(invoiceId: string): Promise<InvoiceSummary> {
     return this.invoiceService.getInvoiceSummary(invoiceId);
   }
-
   getInvoice(invoiceId: string): Promise<Invoice | null> {
     return this.invoiceService.getInvoice(invoiceId);
   }
-
   generateInvoicePdf(input: GeneratePdfInput): Promise<Buffer> {
     return this.pdfGenerator.generateInvoicePdf(input);
   }
-
   createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
     return this.paymentService.createPayment(input);
   }
-
-  /** Razorpay only — create an Order (preferred before Checkout). */
   createOrder(input: CreateOrderInput): Promise<OrderResult> {
     return this.paymentService.createOrder(input);
   }
-
-  /** Razorpay only — verify Checkout payment signature. */
   verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean {
     return this.paymentService.verifyPaymentSignature(input);
   }
-
-  /** Razorpay only — fetch payment by id. */
   fetchPayment(paymentId: string): Promise<PaymentResult> {
     return this.paymentService.fetchPayment(paymentId);
   }
-
-  /** Razorpay only — fetch refund by id. */
   fetchRefund(refundId: string): Promise<RefundResult> {
     return this.paymentService.fetchRefund(refundId);
   }
-
   capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
     return this.paymentService.capturePayment(input);
   }
-
   cancelPayment(paymentId: string): Promise<PaymentResult> {
     return this.paymentService.cancelPayment(paymentId);
   }
-
   getPaymentStatus(paymentId: string): Promise<PaymentResult> {
     return this.paymentService.getPaymentStatus(paymentId);
   }
-
   refundPayment(input: RefundPaymentInput): Promise<RefundResult> {
     return this.refundService.refundPayment(input);
   }
-
   createPlan(input: CreatePlanInput): Promise<Plan> {
     return this.subscriptionService.createPlan(input);
   }
-
   updatePlan(input: UpdatePlanInput): Promise<Plan> {
     return this.subscriptionService.updatePlan(input);
   }
-
   cancelPlan(planId: string): Promise<Plan> {
     return this.subscriptionService.cancelPlan(planId);
   }
-
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription> {
     return this.subscriptionService.createSubscription(input);
   }
-
   cancelSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.cancelSubscription(subscriptionId);
   }
-
   renewSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.renewSubscription(subscriptionId);
   }
-
-  /** Stripe only — pause collection on a subscription. */
   pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
     return this.subscriptionService.pauseSubscription(input);
   }
-
-  /** Stripe only — resume a paused subscription. */
   resumeSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.resumeSubscription(subscriptionId);
   }
-
-  /** Stripe only — fetch the latest subscription state. */
   retrieveSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.retrieveSubscription(subscriptionId);
   }
-
-  /** Stripe only — create a Customer. */
   createCustomer(input: CreateProviderCustomerInput): Promise<ProviderCustomer> {
     return this.subscriptionService.createCustomer(input);
   }
-
-  /** Stripe only — attach a PaymentMethod to a Customer. */
   attachPaymentMethod(input: AttachPaymentMethodInput): Promise<PaymentMethodResult> {
     return this.subscriptionService.attachPaymentMethod(input);
   }
-
-  /** Stripe only — set the Customer's default PaymentMethod. */
   setDefaultPaymentMethod(
     input: SetDefaultPaymentMethodInput,
   ): Promise<ProviderCustomer> {
     return this.subscriptionService.setDefaultPaymentMethod(input);
   }
-
-  /**
-   * Stripe only — retrieve a Stripe Invoice (includes `hostedInvoiceUrl` / PDF URL).
-   * Distinct from local `getInvoice` (billing-kit invoice store).
-   */
   retrieveProviderInvoice(invoiceId: string): Promise<ProviderInvoice> {
     return this.subscriptionService.retrieveProviderInvoice(invoiceId);
   }
-
-  /** Stripe only — report usage for a metered subscription item. */
   reportUsage(input: ReportUsageInput): Promise<UsageRecord> {
     return this.subscriptionService.reportUsage(input);
   }
-
   calculateGST(input: GSTInput): TaxBreakdown {
     const rate = input.rate ?? this.config.tax?.defaultRate;
     return this.taxService.calculateGST({ ...input, rate });
   }
-
   calculateVAT(input: VATInput): TaxBreakdown {
     return this.taxService.calculateVAT(input);
   }
-
-  /** Unified tax engine — GST, VAT, or sales tax (supports autoTax). */
   calculateTax(input: TaxCalculationInput): TaxBreakdown {
     return this.taxService.calculate({
       ...input,
       rate: input.rate ?? this.config.tax?.defaultRate,
       autoTax: input.autoTax ?? this.config.tax?.autoTax,
       sellerState: input.sellerState ?? this.config.tax?.sellerState,
-      country:
-        input.country ?? this.config.tax?.sellerCountry ?? input.country,
+      country: input.country ?? this.config.tax?.sellerCountry ?? input.country,
     });
   }
-
   applyCoupon(input: ApplyCouponInput): CouponResult {
     return this.couponService.applyCoupon(input);
   }
-
   validateCoupon(coupon: Coupon, amount: number): void {
     this.couponService.validateCoupon(coupon, amount);
   }
-
   recordTransaction(input: RecordTransactionInput): Promise<Transaction> {
     return this.transactionService.recordTransaction(input);
   }
-
   getTransaction(id: string): Promise<Transaction> {
     return this.transactionService.getTransaction(id);
   }
-
-  /** Revenue totals grouped by presentment and settlement currency. */
   getRevenueByCurrency(filter?: ReportingFilter) {
     return this.transactionService.getRevenueByCurrency(filter);
   }
-
-  /** Settlement summary: gross, fees, tax on fee, net by currency. */
   getSettlementSummary(filter?: ReportingFilter) {
     return this.transactionService.getSettlementSummary(filter);
   }
-
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
     return this.webhookService.verifyWebhook(payload, signature);
   }

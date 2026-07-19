@@ -1,4 +1,1 @@
-export {
-  InMemoryInvoiceRepository,
-  InMemoryTransactionRepository,
-} from "./in-memory";
+export { InMemoryInvoiceRepository, InMemoryTransactionRepository } from "./in-memory";
