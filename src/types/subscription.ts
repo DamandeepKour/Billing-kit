@@ -36,6 +36,10 @@ export interface CreateSubscriptionInput {
   metadata?: Record<string, string>;
   defaultPaymentMethodId?: string;
   totalCount?: number;
+  coupon?: import("./coupon").Coupon;
+  promotionCode?: string;
+  /** Used to compute discountAmount when applying a coupon/promotion */
+  planAmount?: number;
 }
 export interface PauseSubscriptionInput {
   subscriptionId: string;
@@ -65,4 +69,7 @@ export interface Subscription {
   provider: string;
   subscriptionItemId?: string;
   paused?: boolean;
+  discountAmount?: number;
+  appliedPromotionCode?: string;
+  appliedCouponCode?: string;
 }

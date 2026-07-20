@@ -1,5 +1,14 @@
 import type { BillingKitConfig } from "../types/config";
-import type { ApplyCouponInput, Coupon, CouponResult } from "../types/coupon";
+import type {
+  ApplyCouponInput,
+  ApplyPromotionCodeInput,
+  CheckoutDiscountInput,
+  CheckoutDiscountResult,
+  Coupon,
+  CouponResult,
+  CreatePromotionCodeInput,
+  PromotionCode,
+} from "../types/coupon";
 import type { GenerateInvoiceInput, Invoice, InvoiceSummary } from "../types/invoice";
 import type {
   CapturePaymentInput,
@@ -91,12 +100,20 @@ export class BillingKit {
       this.config.retryAttemptRepository ?? new InMemoryRetryAttemptRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
-    this.invoiceService = new InvoiceService(this.config, invoiceRepository);
-    this.paymentService = new PaymentService(gateway, this.config.currency);
-    this.refundService = new RefundService(gateway);
-    this.subscriptionService = new SubscriptionService(gateway);
-    this.taxService = new TaxService();
     this.couponService = new CouponService();
+    this.invoiceService = new InvoiceService(
+      this.config,
+      invoiceRepository,
+      this.couponService,
+    );
+    this.paymentService = new PaymentService(
+      gateway,
+      this.config.currency,
+      this.couponService,
+    );
+    this.refundService = new RefundService(gateway);
+    this.subscriptionService = new SubscriptionService(gateway, this.couponService);
+    this.taxService = new TaxService();
     this.transactionService = new TransactionService(transactionRepository);
     this.webhookService = new WebhookService(gateway);
     this.pdfGenerator = new InvoicePdfGenerator(this.config);
@@ -208,9 +225,39 @@ export class BillingKit {
   applyCoupon(input: ApplyCouponInput): CouponResult {
     return this.couponService.applyCoupon(input);
   }
+
   validateCoupon(coupon: Coupon, amount: number): void {
     this.couponService.validateCoupon(coupon, amount);
   }
+
+  registerCoupon(coupon: Coupon): Coupon {
+    return this.couponService.registerCoupon(coupon);
+  }
+
+  createPromotionCode(input: CreatePromotionCodeInput): PromotionCode {
+    return this.couponService.createPromotionCode(input);
+  }
+
+  applyPromotionCode(input: ApplyPromotionCodeInput) {
+    return this.couponService.applyPromotionCode(input);
+  }
+
+  removePromotionCode(input: { amount: number; currency?: string }): CheckoutDiscountResult {
+    return this.couponService.removePromotionCode(input);
+  }
+
+  applyCheckoutDiscount(input: CheckoutDiscountInput): CheckoutDiscountResult {
+    return this.couponService.applyCheckoutDiscount(input);
+  }
+
+  getPromotionCode(idOrCode: string): PromotionCode | null {
+    return this.couponService.getPromotionCode(idOrCode);
+  }
+
+  getCoupon(idOrCode: string): Coupon | null {
+    return this.couponService.getCoupon(idOrCode);
+  }
+
   recordTransaction(input: RecordTransactionInput): Promise<Transaction> {
     return this.transactionService.recordTransaction(input);
   }

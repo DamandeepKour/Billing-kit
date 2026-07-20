@@ -63,7 +63,20 @@ export type {
   TaxType,
   VATInput,
 } from "./tax";
-export type { ApplyCouponInput, Coupon, CouponResult, CouponType } from "./coupon";
+export type {
+  ApplyCouponInput,
+  ApplyPromotionCodeInput,
+  AppliedPromotion,
+  CheckoutDiscountInput,
+  CheckoutDiscountResult,
+  Coupon,
+  CouponDuration,
+  CouponResult,
+  CouponType,
+  CreatePromotionCodeInput,
+  DiscountLineItem,
+  PromotionCode,
+} from "./coupon";
 export { TransactionType, TransactionStatus } from "./transaction";
 export type { RecordTransactionInput, Transaction } from "./transaction";
 export type {

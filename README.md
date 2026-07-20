@@ -14,7 +14,7 @@ npm install billing-kit
 - Subscriptions — plans, create, cancel, renew, pause / resume (Stripe); monthly / quarterly / yearly + metered
 - Webhooks — raw-body signature verification + normalized event types (Stripe / Razorpay)
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
-- Coupons — percentage and flat discounts
+- Coupons & promotion codes — amountOff / percentOff, duration, usage limits, checkout apply/remove
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
 - Multi-currency — presentment vs settlement, FX metadata, fee/net reporting (`inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`)
@@ -413,6 +413,54 @@ const pdf = await billing.generateInvoicePdf({ invoice: intra });
 
 Full samples (writes PDFs to `./tmp/`): [`examples/invoices-tax-pdf.ts`](./examples/invoices-tax-pdf.ts)
 
+## Coupons & promotion codes
+
+Stripe-style coupons (`amountOff` / `percentOff`, `duration`) and promotion codes with expiry, usage limits, and minimum amount checks.
+
+```typescript
+billing.registerCoupon({
+  code: "SAVE20",
+  type: "percentage",
+  percentOff: 20,
+  duration: "repeating",
+  durationInMonths: 3,
+  maxRedemptions: 100,
+});
+
+billing.createPromotionCode({
+  code: "LAUNCH20",
+  coupon: "SAVE20",
+  expiresAt: new Date("2027-01-01"),
+  minAmount: 1000,
+});
+
+const checkout = billing.applyCheckoutDiscount({
+  amount: 99900,
+  currency: "inr",
+  promotionCode: "LAUNCH20",
+});
+// checkout.finalAmount, checkout.discountLines
+
+billing.removePromotionCode({ amount: 99900, currency: "inr" });
+
+await billing.generateInvoice({
+  /* ... */
+  promotionCode: "LAUNCH20", // discount line items on invoice + PDF
+});
+
+await billing.createPayment({
+  amount: 99900,
+  promotionCode: "LAUNCH20", // charges discounted amount
+});
+
+await billing.createSubscription({
+  customerId: "cus_xxx",
+  planId: "price_xxx",
+  planAmount: 99900,
+  promotionCode: "LAUNCH20",
+});
+```
+
 ## Tax support
 
 Country/state tax engine for **GST**, **VAT**, and **sales tax**. Structured breakdown includes `taxType`, `taxPercent`, `taxLines`, and totals.
@@ -752,7 +800,7 @@ try {
 | Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `cancelSubscription`, `renewSubscription` |
 | Stripe billing | `pauseSubscription`, `resumeSubscription`, `retrieveSubscription`, `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
-| Coupon | `applyCoupon`, `validateCoupon` |
+| Coupon | `registerCoupon`, `createPromotionCode`, `applyCoupon`, `applyPromotionCode`, `removePromotionCode`, `applyCheckoutDiscount`, `validateCoupon` |
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
 | Webhook | `verifyWebhook` |

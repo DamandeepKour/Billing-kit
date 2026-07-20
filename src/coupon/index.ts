@@ -1,1 +1,1 @@
-export { CouponService } from "./CouponService";
+export { CouponService, resolveCouponValue } from "./CouponService";

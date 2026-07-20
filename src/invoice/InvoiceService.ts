@@ -1,4 +1,5 @@
 import type { InvoiceRepository } from "../interfaces/InvoiceRepository";
+import type { CouponService } from "../coupon/CouponService";
 import type { BillingKitConfig } from "../types/config";
 import type {
   Discount,
@@ -7,10 +8,12 @@ import type {
   InvoiceSummary,
   LineItem,
 } from "../types/invoice";
+import type { DiscountLineItem } from "../types/coupon";
 import { TaxEngine } from "../tax/TaxEngine";
 import { CurrencyMismatchError, InvoiceNotFoundError } from "../utils/errors";
 import { generateId } from "../utils/id";
 import { normalizeCurrency, resolveCurrency, roundAmount } from "../utils/currency";
+
 export class InvoiceNumberGenerator {
   private counter = 0;
   generate(prefix = "INV"): string {
@@ -20,12 +23,19 @@ export class InvoiceNumberGenerator {
     return `${prefix}-${year}-${seq}`;
   }
 }
+
 function sumLineItems(lineItems: LineItem[]): number {
   return lineItems.reduce((sum, item) => sum + item.quantity * item.unitAmount, 0);
 }
-function applyDiscounts(subtotal: number, discounts: Discount[] = []): number {
+
+function applyManualDiscounts(
+  subtotal: number,
+  discounts: Discount[] = [],
+): { total: number; lines: DiscountLineItem[] } {
   let total = 0;
   let remaining = subtotal;
+  const lines: DiscountLineItem[] = [];
+
   for (const discount of discounts) {
     let amount = 0;
     if (discount.type === "percentage") {
@@ -36,9 +46,27 @@ function applyDiscounts(subtotal: number, discounts: Discount[] = []): number {
     amount = Math.min(amount, remaining);
     total += amount;
     remaining -= amount;
+
+    if (amount > 0) {
+      lines.push({
+        description:
+          discount.description ??
+          (discount.type === "percentage"
+            ? `Discount (${discount.value}%)`
+            : "Discount"),
+        amount,
+        type: discount.type,
+        couponCode: discount.couponCode,
+        promotionCode: discount.promotionCode,
+        percentOff: discount.percentOff ?? (discount.type === "percentage" ? discount.value : undefined),
+        amountOff: discount.amountOff ?? (discount.type === "flat" ? amount : undefined),
+      });
+    }
   }
-  return total;
+
+  return { total, lines };
 }
+
 function assertLineItemCurrencyConsistency(
   lineItems: LineItem[],
   invoiceCurrency: string,
@@ -52,13 +80,17 @@ function assertLineItemCurrencyConsistency(
     }
   }
 }
+
 export class InvoiceService {
   private readonly taxEngine = new TaxEngine();
   private readonly numberGenerator = new InvoiceNumberGenerator();
+
   constructor(
     private readonly config: BillingKitConfig,
     private readonly repository: InvoiceRepository,
+    private readonly couponService?: CouponService,
   ) {}
+
   async generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
     const currency = resolveCurrency({
       override: input.currency,
@@ -66,8 +98,51 @@ export class InvoiceService {
       configDefault: this.config.currency,
     });
     assertLineItemCurrencyConsistency(input.lineItems, currency);
+
     const subtotal = sumLineItems(input.lineItems);
-    const discountTotal = applyDiscounts(subtotal, input.discounts);
+    const manual = applyManualDiscounts(subtotal, input.discounts);
+    let discountTotal = manual.total;
+    let discountLines = [...manual.lines];
+    let appliedPromotion = undefined;
+    const discounts = [...(input.discounts ?? [])];
+
+    if (this.couponService && (input.promotionCode || input.coupon)) {
+      const checkout = this.couponService.applyCheckoutDiscount({
+        amount: subtotal - discountTotal,
+        currency,
+        promotionCode: input.promotionCode,
+        coupon: input.coupon,
+        customerId: input.customer.id,
+      });
+      discountTotal += checkout.discountAmount;
+      discountLines = [...discountLines, ...checkout.discountLines];
+      appliedPromotion = checkout.appliedPromotion;
+
+      if (checkout.discountAmount > 0) {
+        discounts.push({
+          type: checkout.discountLines[0]?.type ?? "flat",
+          value:
+            checkout.discountLines[0]?.type === "percentage"
+              ? (checkout.discountLines[0].percentOff ?? 0)
+              : checkout.discountAmount,
+          description: checkout.discountLines[0]?.description,
+          couponCode: checkout.appliedPromotion?.couponCode,
+          promotionCode: checkout.appliedPromotion?.code,
+          amountOff: checkout.appliedPromotion?.amountOff,
+          percentOff: checkout.appliedPromotion?.percentOff,
+        });
+
+        if (checkout.appliedPromotion) {
+          const promo = this.couponService.getPromotionCode(
+            checkout.appliedPromotion.promotionCodeId,
+          );
+          if (promo) this.couponService.recordRedemption(promo);
+        } else if (input.coupon) {
+          this.couponService.recordRedemption(input.coupon);
+        }
+      }
+    }
+
     const taxableAmount = subtotal - discountTotal;
     const taxEnabled = this.config.tax?.enabled ?? false;
     const autoTax = input.autoTax ?? this.config.tax?.autoTax ?? false;
@@ -106,10 +181,12 @@ export class InvoiceService {
             isBusinessCustomer,
             autoTax: autoTax || (taxEnabled && !taxType),
           });
+
     const presentmentCurrency = normalizeCurrency(input.presentmentCurrency ?? currency);
     const settlementCurrency = normalizeCurrency(
       input.settlementCurrency ?? presentmentCurrency,
     );
+
     const invoice: Invoice = {
       id: generateId("inv"),
       number: input.invoiceNumber ?? this.numberGenerator.generate(),
@@ -117,7 +194,9 @@ export class InvoiceService {
       customer: input.customer,
       billingAddress: input.billingAddress,
       lineItems: input.lineItems,
-      discounts: input.discounts ?? [],
+      discounts,
+      discountLines,
+      appliedPromotion,
       notes: input.notes,
       subtotal,
       discountTotal,
@@ -134,8 +213,10 @@ export class InvoiceService {
       providerResponse: input.providerResponse,
       createdAt: new Date(),
     };
+
     return this.repository.save(invoice);
   }
+
   async getInvoiceSummary(invoiceId: string): Promise<InvoiceSummary> {
     const invoice = await this.repository.findById(invoiceId);
     if (!invoice) {
@@ -150,8 +231,10 @@ export class InvoiceService {
       currency: invoice.currency,
       presentmentCurrency: invoice.presentmentCurrency,
       settlementCurrency: invoice.settlementCurrency,
+      discountLines: invoice.discountLines,
     };
   }
+
   async getInvoice(invoiceId: string): Promise<Invoice | null> {
     return this.repository.findById(invoiceId);
   }

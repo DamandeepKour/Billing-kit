@@ -70,7 +70,14 @@ export class InvoicePdfGenerator {
       doc.text(`Subtotal: ${formatAmount(invoice.subtotal, invoice.currency)}`, {
         align: "right",
       });
-      if (invoice.discountTotal > 0) {
+      if (invoice.discountLines && invoice.discountLines.length > 0) {
+        for (const line of invoice.discountLines) {
+          doc.text(
+            `${line.description}: -${formatAmount(line.amount, invoice.currency)}`,
+            { align: "right" },
+          );
+        }
+      } else if (invoice.discountTotal > 0) {
         doc.text(`Discount: -${formatAmount(invoice.discountTotal, invoice.currency)}`, {
           align: "right",
         });

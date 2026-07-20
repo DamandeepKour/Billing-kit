@@ -1,5 +1,10 @@
 import type { TaxBreakdown } from "./tax";
 import type { ExchangeRateMetadata, FeeBreakdown } from "./settlement";
+import type {
+  AppliedPromotion,
+  Coupon,
+  DiscountLineItem,
+} from "./coupon";
 export interface Address {
   line1: string;
   line2?: string;
@@ -31,6 +36,10 @@ export interface Discount {
   type: "percentage" | "flat";
   value: number;
   description?: string;
+  couponCode?: string;
+  promotionCode?: string;
+  amountOff?: number;
+  percentOff?: number;
 }
 export type InvoiceTaxMode = "gst" | "vat" | "sales_tax" | "none";
 
@@ -49,6 +58,8 @@ export interface GenerateInvoiceInput {
   billingAddress: Address;
   lineItems: LineItem[];
   discounts?: Discount[];
+  coupon?: Coupon;
+  promotionCode?: string;
   taxRate?: number;
   taxType?: InvoiceTaxMode;
   taxMode?: InvoiceTaxMode;
@@ -77,7 +88,9 @@ export interface InvoiceSummary {
   currency: string;
   presentmentCurrency?: string;
   settlementCurrency?: string;
+  discountLines?: DiscountLineItem[];
 }
+
 export interface Invoice extends InvoiceSummary {
   id: string;
   number: string;
@@ -86,6 +99,8 @@ export interface Invoice extends InvoiceSummary {
   billingAddress: Address;
   lineItems: LineItem[];
   discounts: Discount[];
+  discountLines: DiscountLineItem[];
+  appliedPromotion?: AppliedPromotion;
   notes?: string;
   createdAt: Date;
   presentmentAmount?: number;

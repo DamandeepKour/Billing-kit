@@ -18,6 +18,8 @@ export interface CreatePaymentInput {
   idempotencyKey?: string;
   presentmentCurrency?: string;
   settlementCurrency?: string;
+  coupon?: import("./coupon").Coupon;
+  promotionCode?: string;
 }
 export interface CapturePaymentInput {
   paymentId: string;
@@ -37,6 +39,10 @@ export interface PaymentResult {
   exchangeRate?: ExchangeRateMetadata;
   fees?: FeeBreakdown;
   providerResponse?: Record<string, unknown>;
+  originalAmount?: number;
+  discountAmount?: number;
+  appliedPromotionCode?: string;
+  appliedCouponCode?: string;
 }
 export interface RefundPaymentInput {
   paymentId: string;
