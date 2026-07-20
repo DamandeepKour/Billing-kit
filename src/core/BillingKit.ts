@@ -52,11 +52,22 @@ import type {
   ReportBillingRecoveryInput,
   RetryAttemptFilter,
 } from "../types/retry";
+import type {
+  AttachProfilePaymentMethodInput,
+  CreateCustomerProfileInput,
+  CustomerBillingProfile,
+  SetDefaultProfilePaymentMethodInput,
+  UpdateCustomerProfileInput,
+} from "../types/customer-profile";
 import { CouponService } from "../coupon";
+import {
+  CustomerProfileService,
+} from "../customer";
 import { InvoiceService } from "../invoice";
 import { InvoicePdfGenerator } from "../pdf";
 import { PaymentManager, PaymentService } from "../payment";
 import {
+  InMemoryCustomerProfileRepository,
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,
@@ -80,6 +91,7 @@ export class BillingKit {
   private readonly webhookService: WebhookService;
   private readonly pdfGenerator: InvoicePdfGenerator;
   private readonly retryService: RetryService;
+  private readonly customerProfileService: CustomerProfileService;
 
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
@@ -98,18 +110,27 @@ export class BillingKit {
       this.config.transactionRepository ?? new InMemoryTransactionRepository();
     const retryAttemptRepository =
       this.config.retryAttemptRepository ?? new InMemoryRetryAttemptRepository();
+    const customerProfileRepository =
+      this.config.customerProfileRepository ??
+      new InMemoryCustomerProfileRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
     this.couponService = new CouponService();
+    this.customerProfileService = new CustomerProfileService(
+      customerProfileRepository,
+      gateway,
+    );
     this.invoiceService = new InvoiceService(
       this.config,
       invoiceRepository,
       this.couponService,
+      this.customerProfileService,
     );
     this.paymentService = new PaymentService(
       gateway,
       this.config.currency,
       this.couponService,
+      this.customerProfileService,
     );
     this.refundService = new RefundService(gateway);
     this.subscriptionService = new SubscriptionService(gateway, this.couponService);
@@ -192,14 +213,55 @@ export class BillingKit {
   createCustomer(input: CreateProviderCustomerInput): Promise<ProviderCustomer> {
     return this.subscriptionService.createCustomer(input);
   }
-  attachPaymentMethod(input: AttachPaymentMethodInput): Promise<PaymentMethodResult> {
+
+  createCustomerProfile(
+    input: CreateCustomerProfileInput,
+  ): Promise<CustomerBillingProfile> {
+    return this.customerProfileService.createCustomerProfile(input);
+  }
+
+  updateCustomerProfile(
+    input: UpdateCustomerProfileInput,
+  ): Promise<CustomerBillingProfile> {
+    return this.customerProfileService.updateCustomerProfile(input);
+  }
+
+  getCustomerProfile(profileId: string): Promise<CustomerBillingProfile> {
+    return this.customerProfileService.getCustomerProfile(profileId);
+  }
+
+  listCustomerProfiles(): Promise<CustomerBillingProfile[]> {
+    return this.customerProfileService.listCustomerProfiles();
+  }
+
+  attachPaymentMethod(
+    input: AttachProfilePaymentMethodInput,
+  ): Promise<CustomerBillingProfile>;
+  attachPaymentMethod(input: AttachPaymentMethodInput): Promise<PaymentMethodResult>;
+  attachPaymentMethod(
+    input: AttachProfilePaymentMethodInput | AttachPaymentMethodInput,
+  ): Promise<CustomerBillingProfile | PaymentMethodResult> {
+    if ("profileId" in input) {
+      return this.customerProfileService.attachPaymentMethod(input);
+    }
     return this.subscriptionService.attachPaymentMethod(input);
   }
+
+  setDefaultPaymentMethod(
+    input: SetDefaultProfilePaymentMethodInput,
+  ): Promise<CustomerBillingProfile>;
   setDefaultPaymentMethod(
     input: SetDefaultPaymentMethodInput,
-  ): Promise<ProviderCustomer> {
+  ): Promise<ProviderCustomer>;
+  setDefaultPaymentMethod(
+    input: SetDefaultProfilePaymentMethodInput | SetDefaultPaymentMethodInput,
+  ): Promise<CustomerBillingProfile | ProviderCustomer> {
+    if ("profileId" in input) {
+      return this.customerProfileService.setDefaultPaymentMethod(input);
+    }
     return this.subscriptionService.setDefaultPaymentMethod(input);
   }
+
   retrieveProviderInvoice(invoiceId: string): Promise<ProviderInvoice> {
     return this.subscriptionService.retrieveProviderInvoice(invoiceId);
   }

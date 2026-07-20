@@ -1,6 +1,7 @@
 import type { PaymentGateway } from "../interfaces/PaymentGateway";
 import type { RazorpayBillingProvider } from "../interfaces/RazorpayBillingProvider";
 import type { CouponService } from "../coupon/CouponService";
+import type { CustomerProfileService } from "../customer/CustomerProfileService";
 import type {
   CreateOrderInput,
   OrderResult,
@@ -31,11 +32,34 @@ export class PaymentService {
     private readonly gateway: PaymentGateway,
     private readonly defaultCurrency?: string,
     private readonly couponService?: CouponService,
+    private readonly customerProfileService?: CustomerProfileService,
   ) {}
 
   async createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
+    let customerId = input.customerId;
+    let currencyOverride = input.currency;
+    let metadata = input.metadata;
+
+    if (input.customerProfileId && this.customerProfileService) {
+      const profile = await this.customerProfileService.getCustomerProfile(
+        input.customerProfileId,
+      );
+      customerId = customerId ?? profile.providerCustomerId ?? profile.id;
+      currencyOverride = currencyOverride ?? profile.defaultCurrency;
+      metadata = {
+        ...metadata,
+        customerProfileId: profile.id,
+        ...(profile.paymentPreferences.defaultPaymentMethodId
+          ? {
+              defaultPaymentMethodId:
+                profile.paymentPreferences.defaultPaymentMethodId,
+            }
+          : {}),
+      };
+    }
+
     const currency = resolveCurrency({
-      override: input.currency,
+      override: currencyOverride,
       configDefault: this.defaultCurrency,
     });
 
@@ -51,7 +75,7 @@ export class PaymentService {
         currency,
         promotionCode: input.promotionCode,
         coupon: input.coupon,
-        customerId: input.customerId,
+        customerId,
       });
       originalAmount = checkout.originalAmount;
       discountAmount = checkout.discountAmount;
@@ -73,10 +97,10 @@ export class PaymentService {
     const gatewayInput: CreatePaymentInput = {
       amount,
       currency,
-      customerId: input.customerId,
+      customerId,
       orderId: input.orderId,
       description: input.description,
-      metadata: input.metadata,
+      metadata,
       idempotencyKey: input.idempotencyKey,
       presentmentCurrency: input.presentmentCurrency,
       settlementCurrency: input.settlementCurrency,

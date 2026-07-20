@@ -104,4 +104,15 @@ export type {
   RetryPolicyConfig,
 } from "./retry";
 export { DEFAULT_RETRY_POLICY } from "./retry";
+export type {
+  AttachProfilePaymentMethodInput,
+  CreateCustomerProfileInput,
+  CustomerBillingProfile,
+  PaymentMethodType,
+  PaymentPreferences,
+  SavedPaymentMethod,
+  SetDefaultProfilePaymentMethodInput,
+  UpdateCustomerProfileInput,
+} from "./customer-profile";
+export { profileToCustomer } from "./customer-profile";
 export type { GeneratePdfInput } from "./pdf";

@@ -6,6 +6,7 @@ export type {
   ApplyPromotionCodeInput,
   AppliedPromotion,
   AttachPaymentMethodInput,
+  AttachProfilePaymentMethodInput,
   BillingAttemptKind,
   BillingAttemptStatus,
   BillingInterval,
@@ -21,6 +22,7 @@ export type {
   CouponDuration,
   CouponResult,
   CouponType,
+  CreateCustomerProfileInput,
   CreateOrderInput,
   CreatePaymentInput,
   CreatePlanInput,
@@ -28,6 +30,7 @@ export type {
   CreateProviderCustomerInput,
   CreateSubscriptionInput,
   Customer,
+  CustomerBillingProfile,
   Discount,
   DiscountLineItem,
   GenerateInvoiceInput,
@@ -44,6 +47,8 @@ export type {
   PauseCollectionBehavior,
   PauseSubscriptionInput,
   PaymentMethodResult,
+  PaymentMethodType,
+  PaymentPreferences,
   PaymentResult,
   PaymentStatus,
   Plan,
@@ -65,7 +70,9 @@ export type {
   RetryPolicyConfig,
   RevenueByCurrencyRow,
   SalesTaxInput,
+  SavedPaymentMethod,
   SetDefaultPaymentMethodInput,
+  SetDefaultProfilePaymentMethodInput,
   SettlementFields,
   SettlementSummary,
   ExchangeRateMetadata,
@@ -77,6 +84,7 @@ export type {
   TaxLine,
   TaxType,
   Transaction,
+  UpdateCustomerProfileInput,
   UpdatePlanInput,
   UsageRecord,
   UsageType,
@@ -91,9 +99,15 @@ export {
   RAZORPAY_WEBHOOK_EVENTS,
   TransactionStatus,
   TransactionType,
+  profileToCustomer,
 } from "./types";
 export { CouponService, resolveCouponValue } from "./coupon";
+export {
+  CustomerProfileService,
+  CustomerProfileNotFoundError,
+} from "./customer";
 export type {
+  CustomerProfileRepository,
   InvoiceRepository,
   PaymentGateway,
   RazorpayBillingProvider,
@@ -102,6 +116,7 @@ export type {
   TransactionRepository,
 } from "./interfaces";
 export {
+  InMemoryCustomerProfileRepository,
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,

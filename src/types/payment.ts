@@ -12,6 +12,7 @@ export interface CreatePaymentInput {
   amount: number;
   currency?: string;
   customerId?: string;
+  customerProfileId?: string;
   orderId?: string;
   description?: string;
   metadata?: Record<string, string>;

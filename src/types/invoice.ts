@@ -54,8 +54,9 @@ export type InvoiceStatus =
   | "recovered"
   | "uncollectible";
 export interface GenerateInvoiceInput {
-  customer: Customer;
-  billingAddress: Address;
+  customer?: Customer;
+  billingAddress?: Address;
+  customerProfileId?: string;
   lineItems: LineItem[];
   discounts?: Discount[];
   coupon?: Coupon;

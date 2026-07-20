@@ -15,6 +15,7 @@ npm install billing-kit
 - Webhooks — raw-body signature verification + normalized event types (Stripe / Razorpay)
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
 - Coupons & promotion codes — amountOff / percentOff, duration, usage limits, checkout apply/remove
+- Customer billing profiles — reusable tax IDs, address, currency, saved payment methods
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
 - Multi-currency — presentment vs settlement, FX metadata, fee/net reporting (`inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`)
@@ -461,6 +462,51 @@ await billing.createSubscription({
 });
 ```
 
+## Customer billing profiles
+
+Reusable customer records with tax IDs, billing address, default currency, payment preferences, and saved payment methods.
+
+```typescript
+const profile = await billing.createCustomerProfile({
+  name: "Ada Lovelace",
+  email: "ada@acme.com",
+  companyName: "Acme India",
+  gstin: "29AAAAA0000A1Z5",
+  isBusinessCustomer: true,
+  billingAddress: {
+    line1: "14 MG Road",
+    city: "Bengaluru",
+    state: "KA",
+    postalCode: "560001",
+    country: "IN",
+  },
+  defaultCurrency: "inr",
+  billingNotes: "Net 15",
+  paymentPreferences: { allowAutoCharge: true },
+});
+
+await billing.attachPaymentMethod({
+  profileId: profile.id,
+  paymentMethodId: "pm_card_visa",
+  type: "card",
+  last4: "4242",
+  setAsDefault: true,
+});
+
+// Reuse on invoices / payments
+await billing.generateInvoice({
+  customerProfileId: profile.id,
+  lineItems: [{ description: "Pro", quantity: 1, unitAmount: 99900 }],
+});
+
+await billing.createPayment({
+  amount: 99900,
+  customerProfileId: profile.id,
+});
+```
+
+Pass `syncProvider: true` on create/attach to also create/attach against Stripe when `provider: "stripe"`.
+
 ## Tax support
 
 Country/state tax engine for **GST**, **VAT**, and **sales tax**. Structured breakdown includes `taxType`, `taxPercent`, `taxLines`, and totals.
@@ -695,6 +741,7 @@ const billing = new BillingKit({
 | `InvoiceRepository` | `save`, `findById` | `InMemoryInvoiceRepository` |
 | `TransactionRepository` | `save`, `findById`, `list` | `InMemoryTransactionRepository` |
 | `RetryAttemptRepository` | `save`, `findById`, `findByReference`, `list` | `InMemoryRetryAttemptRepository` |
+| `CustomerProfileRepository` | `save`, `findById`, `findByEmail`, `list`, `delete` | `InMemoryCustomerProfileRepository` |
 
 ## Payment & invoice retries (dunning)
 
@@ -801,6 +848,7 @@ try {
 | Stripe billing | `pauseSubscription`, `resumeSubscription`, `retrieveSubscription`, `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `registerCoupon`, `createPromotionCode`, `applyCoupon`, `applyPromotionCode`, `removePromotionCode`, `applyCheckoutDiscount`, `validateCoupon` |
+| Customer profile | `createCustomerProfile`, `updateCustomerProfile`, `getCustomerProfile`, `attachPaymentMethod`, `setDefaultPaymentMethod` |
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
 | Webhook | `verifyWebhook` |
@@ -829,6 +877,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Razorpay orders, payment signature, fetch helpers, normalized webhooks |
 | Done | Presentment/settlement currencies, fee breakdown, revenue reporting |
 | Done | Payment/invoice retry (dunning), grace period, recovery hooks |
+| Done | Customer billing profiles with reusable payment methods |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

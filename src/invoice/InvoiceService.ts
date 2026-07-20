@@ -1,7 +1,10 @@
 import type { InvoiceRepository } from "../interfaces/InvoiceRepository";
 import type { CouponService } from "../coupon/CouponService";
+import type { CustomerProfileService } from "../customer/CustomerProfileService";
 import type { BillingKitConfig } from "../types/config";
 import type {
+  Address,
+  Customer,
   Discount,
   GenerateInvoiceInput,
   Invoice,
@@ -9,8 +12,13 @@ import type {
   LineItem,
 } from "../types/invoice";
 import type { DiscountLineItem } from "../types/coupon";
+import { profileToCustomer } from "../types/customer-profile";
 import { TaxEngine } from "../tax/TaxEngine";
-import { CurrencyMismatchError, InvoiceNotFoundError } from "../utils/errors";
+import {
+  BillingKitError,
+  CurrencyMismatchError,
+  InvoiceNotFoundError,
+} from "../utils/errors";
 import { generateId } from "../utils/id";
 import { normalizeCurrency, resolveCurrency, roundAmount } from "../utils/currency";
 
@@ -89,12 +97,14 @@ export class InvoiceService {
     private readonly config: BillingKitConfig,
     private readonly repository: InvoiceRepository,
     private readonly couponService?: CouponService,
+    private readonly customerProfileService?: CustomerProfileService,
   ) {}
 
   async generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
+    const resolved = await this.resolveCustomerAndAddress(input);
     const currency = resolveCurrency({
       override: input.currency,
-      customerDefault: input.customer.defaultCurrency,
+      customerDefault: resolved.customer.defaultCurrency,
       configDefault: this.config.currency,
     });
     assertLineItemCurrencyConsistency(input.lineItems, currency);
@@ -112,7 +122,7 @@ export class InvoiceService {
         currency,
         promotionCode: input.promotionCode,
         coupon: input.coupon,
-        customerId: input.customer.id,
+        customerId: resolved.customer.id,
       });
       discountTotal += checkout.discountAmount;
       discountLines = [...discountLines, ...checkout.discountLines];
@@ -152,16 +162,19 @@ export class InvoiceService {
       this.config.tax?.taxType ??
       (taxEnabled || autoTax ? undefined : "none");
     const country =
-      input.country ?? input.billingAddress.country ?? this.config.tax?.sellerCountry;
-    const buyerState = input.state ?? input.placeOfSupply ?? input.billingAddress.state;
+      input.country ??
+      resolved.billingAddress.country ??
+      this.config.tax?.sellerCountry;
+    const buyerState =
+      input.state ?? input.placeOfSupply ?? resolved.billingAddress.state;
     const sellerState = input.sellerState ?? this.config.tax?.sellerState ?? "";
     const customerTaxId =
       input.customerTaxId ??
-      input.customer.customerTaxId ??
-      input.customer.gstin ??
-      input.customer.vatNumber;
+      resolved.customer.customerTaxId ??
+      resolved.customer.gstin ??
+      resolved.customer.vatNumber;
     const isBusinessCustomer =
-      input.isBusinessCustomer ?? input.customer.isBusinessCustomer;
+      input.isBusinessCustomer ?? resolved.customer.isBusinessCustomer;
     const tax =
       !taxEnabled && !autoTax && (taxType === "none" || taxType === undefined)
         ? this.taxEngine.calculate({
@@ -191,13 +204,13 @@ export class InvoiceService {
       id: generateId("inv"),
       number: input.invoiceNumber ?? this.numberGenerator.generate(),
       status: "draft",
-      customer: input.customer,
-      billingAddress: input.billingAddress,
+      customer: resolved.customer,
+      billingAddress: resolved.billingAddress,
       lineItems: input.lineItems,
       discounts,
       discountLines,
       appliedPromotion,
-      notes: input.notes,
+      notes: input.notes ?? resolved.billingNotes,
       subtotal,
       discountTotal,
       taxableAmount,
@@ -215,6 +228,47 @@ export class InvoiceService {
     };
 
     return this.repository.save(invoice);
+  }
+
+  private async resolveCustomerAndAddress(input: GenerateInvoiceInput): Promise<{
+    customer: Customer;
+    billingAddress: Address;
+    billingNotes?: string;
+  }> {
+    if (input.customerProfileId) {
+      if (!this.customerProfileService) {
+        throw new BillingKitError(
+          "Customer profiles are not configured",
+          "CUSTOMER_PROFILE_UNAVAILABLE",
+        );
+      }
+      const profile = await this.customerProfileService.getCustomerProfile(
+        input.customerProfileId,
+      );
+      return {
+        customer: {
+          ...profileToCustomer(profile),
+          ...input.customer,
+          id: input.customer?.id ?? profile.id,
+          defaultCurrency:
+            input.customer?.defaultCurrency ?? profile.defaultCurrency,
+        },
+        billingAddress: input.billingAddress ?? profile.billingAddress,
+        billingNotes: profile.billingNotes,
+      };
+    }
+
+    if (!input.customer || !input.billingAddress) {
+      throw new BillingKitError(
+        "customer and billingAddress are required when customerProfileId is omitted",
+        "INVALID_INVOICE_INPUT",
+      );
+    }
+
+    return {
+      customer: input.customer,
+      billingAddress: input.billingAddress,
+    };
   }
 
   async getInvoiceSummary(invoiceId: string): Promise<InvoiceSummary> {

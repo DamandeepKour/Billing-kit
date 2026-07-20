@@ -4,3 +4,4 @@ export type { RazorpayBillingProvider } from "./RazorpayBillingProvider";
 export type { InvoiceRepository } from "./InvoiceRepository";
 export type { TransactionRepository } from "./TransactionRepository";
 export type { RetryAttemptRepository } from "./RetryAttemptRepository";
+export type { CustomerProfileRepository } from "./CustomerProfileRepository";

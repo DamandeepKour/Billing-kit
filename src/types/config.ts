@@ -38,4 +38,5 @@ export interface BillingKitConfig {
   invoiceRepository?: InvoiceRepository;
   transactionRepository?: TransactionRepository;
   retryAttemptRepository?: RetryAttemptRepository;
+  customerProfileRepository?: import("../interfaces/CustomerProfileRepository").CustomerProfileRepository;
 }
