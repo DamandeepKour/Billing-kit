@@ -16,6 +16,7 @@ npm install billing-kit
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
 - Coupons & promotion codes — amountOff / percentOff, duration, usage limits, checkout apply/remove
 - Customer billing profiles — reusable tax IDs, address, currency, saved payment methods
+- Marketplace routing — split payments, transfers, reversals (Razorpay Route)
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
 - Multi-currency — presentment vs settlement, FX metadata, fee/net reporting (`inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`)
@@ -26,7 +27,7 @@ npm install billing-kit
 | Provider | Config | Notes |
 |----------|--------|--------|
 | **Stripe** | `provider: "stripe"`, `secretKey` | PaymentIntents, Prices/subscriptions, customers, hosted invoices, metered usage, refunds, webhooks |
-| **Razorpay** | `provider: "razorpay"`, `keyId`, `secretKey` | Orders, payment signature, captures, plans, subscriptions, refunds, raw-body webhooks |
+| **Razorpay** | `provider: "razorpay"`, `keyId`, `secretKey` | Orders, payment signature, captures, plans, subscriptions, refunds, Route transfers, raw-body webhooks |
 
 ```typescript
 import { BillingKit } from "billing-kit";
@@ -507,6 +508,51 @@ await billing.createPayment({
 
 Pass `syncProvider: true` on create/attach to also create/attach against Stripe when `provider: "stripe"`.
 
+## Marketplace splits (Razorpay Route)
+
+Split a captured payment between the platform and linked vendor accounts. Supports commission rules, settlement holds, transfers, and reversals.
+
+```typescript
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+});
+
+// Preview allocation
+billing.calculateSplit({
+  paymentId: "pay_xxx",
+  amount: 100000,
+  platformCommission: { type: "percent", percent: 10 },
+  transfers: [
+    { linkedAccountId: "acc_vendor_a", percent: 60 },
+    { linkedAccountId: "acc_vendor_b", percent: 40, onHold: true },
+  ],
+});
+
+const split = await billing.splitPayment({
+  paymentId: "pay_xxx",
+  amount: 100000,
+  platformCommission: { type: "percent", percent: 10 },
+  transfers: [
+    { linkedAccountId: "acc_vendor_a", percent: 60 },
+    { linkedAccountId: "acc_vendor_b", percent: 40, onHold: true },
+  ],
+});
+// split.platformFee, split.vendorAmount, split.transfers
+
+await billing.createTransfer({
+  linkedAccountId: "acc_vendor_a",
+  amount: 50000,
+  paymentId: "pay_xxx", // or omit for a direct transfer
+});
+
+await billing.reverseTransfer({ transferId: "trf_xxx", amount: 10000 });
+await billing.getSettlementDetails({ settlementId: "setl_xxx" });
+```
+
+Transactions record `routedAmount`, `platformFee`, `vendorAmount`, and `settlementStatus`.
+
 ## Tax support
 
 Country/state tax engine for **GST**, **VAT**, and **sales tax**. Structured breakdown includes `taxType`, `taxPercent`, `taxLines`, and totals.
@@ -849,6 +895,7 @@ try {
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `registerCoupon`, `createPromotionCode`, `applyCoupon`, `applyPromotionCode`, `removePromotionCode`, `applyCheckoutDiscount`, `validateCoupon` |
 | Customer profile | `createCustomerProfile`, `updateCustomerProfile`, `getCustomerProfile`, `attachPaymentMethod`, `setDefaultPaymentMethod` |
+| Route / splits | `splitPayment`, `createTransfer`, `reverseTransfer`, `getSettlementDetails`, `calculateSplit` |
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
 | Webhook | `verifyWebhook` |
@@ -878,6 +925,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Presentment/settlement currencies, fee breakdown, revenue reporting |
 | Done | Payment/invoice retry (dunning), grace period, recovery hooks |
 | Done | Customer billing profiles with reusable payment methods |
+| Done | Razorpay Route payment splits, transfers, reversals |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

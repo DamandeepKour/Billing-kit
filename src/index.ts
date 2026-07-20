@@ -73,8 +73,11 @@ export type {
   SavedPaymentMethod,
   SetDefaultPaymentMethodInput,
   SetDefaultProfilePaymentMethodInput,
+  SettlementDetails,
   SettlementFields,
   SettlementSummary,
+  SplitPaymentInput,
+  SplitPaymentResult,
   ExchangeRateMetadata,
   FeeBreakdown,
   Subscription,
@@ -84,6 +87,16 @@ export type {
   TaxLine,
   TaxType,
   Transaction,
+  TransferAllocation,
+  TransferReversalResult,
+  TransferResult,
+  TransferRule,
+  TransferSettlementStatus,
+  CreateTransferInput,
+  GetSettlementDetailsInput,
+  ReverseTransferInput,
+  CommissionRule,
+  CommissionType,
   UpdateCustomerProfileInput,
   UpdatePlanInput,
   UsageRecord,
@@ -112,6 +125,7 @@ export type {
   PaymentGateway,
   RazorpayBillingProvider,
   RetryAttemptRepository,
+  RouteTransferProvider,
   StripeBillingProvider,
   TransactionRepository,
 } from "./interfaces";
@@ -157,6 +171,13 @@ export {
 } from "./utils/currency";
 export type { SupportedCurrency } from "./utils/currency";
 export { calculateFeeBreakdown, normalizeSettlementFields } from "./utils/settlement";
+export {
+  calculatePlatformFee,
+  calculateSplitAllocations,
+  resolveTransferAmount,
+  SplitValidationError,
+} from "./utils/split";
+export { RouteService } from "./route";
 export {
   TaxEngine,
   TaxService,

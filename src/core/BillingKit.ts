@@ -59,6 +59,16 @@ import type {
   SetDefaultProfilePaymentMethodInput,
   UpdateCustomerProfileInput,
 } from "../types/customer-profile";
+import type {
+  CreateTransferInput,
+  GetSettlementDetailsInput,
+  ReverseTransferInput,
+  SettlementDetails,
+  SplitPaymentInput,
+  SplitPaymentResult,
+  TransferReversalResult,
+  TransferResult,
+} from "../types/route";
 import { CouponService } from "../coupon";
 import {
   CustomerProfileService,
@@ -74,6 +84,7 @@ import {
 } from "../repositories";
 import { RefundService } from "../refund";
 import { RetryService } from "../retry";
+import { RouteService } from "../route";
 import { SubscriptionService } from "../subscription";
 import { TaxService } from "../tax";
 import { TransactionService } from "../transaction";
@@ -92,6 +103,7 @@ export class BillingKit {
   private readonly pdfGenerator: InvoicePdfGenerator;
   private readonly retryService: RetryService;
   private readonly customerProfileService: CustomerProfileService;
+  private readonly routeService: RouteService;
 
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
@@ -143,6 +155,7 @@ export class BillingKit {
       this.config.retry,
       this.config.retryHooks,
     );
+    this.routeService = new RouteService(gateway, this.transactionService);
   }
   generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
     return this.invoiceService.generateInvoice(input);
@@ -331,6 +344,26 @@ export class BillingKit {
   }
   getSettlementSummary(filter?: ReportingFilter) {
     return this.transactionService.getSettlementSummary(filter);
+  }
+
+  calculateSplit(input: SplitPaymentInput) {
+    return this.routeService.calculateSplit(input);
+  }
+
+  createTransfer(input: CreateTransferInput): Promise<TransferResult> {
+    return this.routeService.createTransfer(input);
+  }
+
+  splitPayment(input: SplitPaymentInput): Promise<SplitPaymentResult> {
+    return this.routeService.splitPayment(input);
+  }
+
+  reverseTransfer(input: ReverseTransferInput): Promise<TransferReversalResult> {
+    return this.routeService.reverseTransfer(input);
+  }
+
+  getSettlementDetails(input: GetSettlementDetailsInput): Promise<SettlementDetails> {
+    return this.routeService.getSettlementDetails(input);
   }
 
   openBillingAttempt(input: OpenBillingAttemptInput): Promise<BillingRetryAttempt> {

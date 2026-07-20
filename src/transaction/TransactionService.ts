@@ -49,6 +49,12 @@ export class TransactionService {
       status: input.status ?? TransactionStatus.SUCCESS,
       createdAt: new Date(),
       ...settlement,
+      routedAmount: input.routedAmount,
+      platformFee: input.platformFee,
+      vendorAmount: input.vendorAmount,
+      settlementStatus: input.settlementStatus,
+      transferIds: input.transferIds,
+      linkedAccountId: input.linkedAccountId,
     };
     return this.repository.save(transaction);
   }

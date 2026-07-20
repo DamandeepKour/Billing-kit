@@ -11,7 +11,9 @@ import type {
   Subscription,
 } from "../types/subscription";
 import type { WebhookEvent } from "../types/webhook";
-export interface RazorpayBillingProvider {
+import type { RouteTransferProvider } from "./RouteTransferProvider";
+
+export type RazorpayBillingProvider = RouteTransferProvider & {
   createOrder(input: CreateOrderInput): Promise<OrderResult>;
   verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean;
   fetchPayment(paymentId: string): Promise<PaymentResult>;
@@ -20,4 +22,4 @@ export interface RazorpayBillingProvider {
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription>;
   cancelSubscription(subscriptionId: string): Promise<Subscription>;
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent;
-}
+};

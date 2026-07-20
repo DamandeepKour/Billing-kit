@@ -23,9 +23,21 @@ import type {
   UpdatePlanInput,
 } from "../../types/subscription";
 import type { WebhookEvent } from "../../types/webhook";
+import type {
+  CreateTransferInput,
+  GetSettlementDetailsInput,
+  ReverseTransferInput,
+  SettlementDetails,
+  SplitPaymentInput,
+  SplitPaymentResult,
+  TransferReversalResult,
+  TransferResult,
+  TransferSettlementStatus,
+} from "../../types/route";
 import { InvalidConfigError, WebhookVerificationError } from "../../utils/errors";
 import { normalizeCurrency } from "../../utils/currency";
 import { normalizeRazorpayWebhook } from "../../utils/webhook-normalize";
+import { calculateSplitAllocations } from "../../utils/split";
 function mapRazorpayStatus(status: string, captured: boolean): PaymentResult["status"] {
   if (captured) return "captured";
   if (status === "authorized") return "authorized";
@@ -280,4 +292,205 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
     const body = typeof raw === "string" ? raw : raw.toString("utf8");
     return normalizeRazorpayWebhook(body, this.name);
   }
+
+  async createTransfer(input: CreateTransferInput): Promise<TransferResult> {
+    const currency = (input.currency ?? this.currency).toUpperCase();
+    const client = this.client as unknown as {
+      transfers: {
+        create: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      };
+      payments: {
+        transfer: (
+          paymentId: string,
+          params: Record<string, unknown>,
+        ) => Promise<Record<string, unknown>>;
+      };
+    };
+
+    let raw: Record<string, unknown>;
+    if (input.paymentId) {
+      raw = await client.payments.transfer(input.paymentId, {
+        transfers: [
+          {
+            account: input.linkedAccountId,
+            amount: input.amount,
+            currency,
+            on_hold: input.onHold ?? false,
+            notes: input.notes,
+          },
+        ],
+      });
+      const items = (raw.items as Array<Record<string, unknown>> | undefined) ?? [raw];
+      const first = items[0] ?? raw;
+      return mapTransfer(first, this.name, input.paymentId);
+    }
+
+    raw = await client.transfers.create({
+      account: input.linkedAccountId,
+      amount: input.amount,
+      currency,
+      on_hold: input.onHold ?? false,
+      notes: input.notes,
+    });
+    return mapTransfer(raw, this.name);
+  }
+
+  async splitPayment(input: SplitPaymentInput): Promise<SplitPaymentResult> {
+    const currency = normalizeCurrency(input.currency ?? this.currency);
+    const computed = calculateSplitAllocations(input);
+    const client = this.client as unknown as {
+      payments: {
+        transfer: (
+          paymentId: string,
+          params: Record<string, unknown>,
+        ) => Promise<Record<string, unknown>>;
+      };
+    };
+
+    const raw = await client.payments.transfer(input.paymentId, {
+      transfers: computed.allocations.map((a) => ({
+        account: a.linkedAccountId,
+        amount: a.amount,
+        currency: currency.toUpperCase(),
+        on_hold: a.onHold,
+        notes: a.notes,
+      })),
+    });
+
+    const items =
+      (raw.items as Array<Record<string, unknown>> | undefined) ??
+      (Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [raw]);
+
+    const transfers = items.map((item) => mapTransfer(item, this.name, input.paymentId));
+    const settlementStatus = transfers.some((t) => t.onHold)
+      ? ("on_hold" as const)
+      : transfers.every((t) => t.status === "settled")
+        ? ("settled" as const)
+        : ("pending" as const);
+
+    return {
+      paymentId: input.paymentId,
+      grossAmount: input.amount,
+      platformFee: computed.platformFee,
+      vendorAmount: computed.vendorAmount,
+      routedAmount: computed.routedAmount,
+      currency,
+      settlementStatus,
+      transfers,
+      allocations: computed.allocations,
+    };
+  }
+
+  async reverseTransfer(input: ReverseTransferInput): Promise<TransferReversalResult> {
+    const client = this.client as unknown as {
+      transfers: {
+        reverse: (
+          transferId: string,
+          params?: Record<string, unknown>,
+        ) => Promise<Record<string, unknown>>;
+      };
+    };
+
+    const raw = await client.transfers.reverse(input.transferId, {
+      amount: input.amount,
+      notes: input.notes,
+    });
+
+    return {
+      id: String(raw.id ?? `rev_${input.transferId}`),
+      transferId: input.transferId,
+      amount: Number(raw.amount ?? input.amount ?? 0),
+      currency: String(raw.currency ?? this.currency).toLowerCase(),
+      status: mapTransferStatus(String(raw.status ?? "processed")),
+      provider: this.name,
+      providerResponse: raw,
+    };
+  }
+
+  async getSettlementDetails(
+    input: GetSettlementDetailsInput,
+  ): Promise<SettlementDetails> {
+    const client = this.client as unknown as {
+      settlements: {
+        fetch: (id: string) => Promise<Record<string, unknown>>;
+      };
+      transfers: {
+        fetch: (id: string) => Promise<Record<string, unknown>>;
+      };
+    };
+
+    if (input.settlementId) {
+      const raw = await client.settlements.fetch(input.settlementId);
+      return {
+        id: String(raw.id),
+        amount: Number(raw.amount ?? 0),
+        currency: String(raw.currency ?? this.currency).toLowerCase(),
+        status: mapTransferStatus(String(raw.status ?? "pending")),
+        fees: raw.fees !== undefined ? Number(raw.fees) : undefined,
+        tax: raw.tax !== undefined ? Number(raw.tax) : undefined,
+        utr: raw.utr ? String(raw.utr) : undefined,
+        settledAt: raw.created_at
+          ? new Date(Number(raw.created_at) * 1000)
+          : undefined,
+        provider: this.name,
+        providerResponse: raw,
+      };
+    }
+
+    if (input.transferId) {
+      const raw = await client.transfers.fetch(input.transferId);
+      return {
+        id: String(raw.id),
+        amount: Number(raw.amount ?? 0),
+        currency: String(raw.currency ?? this.currency).toLowerCase(),
+        status: mapTransferStatus(String(raw.status ?? "pending")),
+        transferIds: [String(raw.id)],
+        provider: this.name,
+        providerResponse: raw,
+      };
+    }
+
+    throw new InvalidConfigError(
+      "settlementId or transferId is required for getSettlementDetails",
+    );
+  }
+}
+
+function mapTransferStatus(status: string): TransferSettlementStatus {
+  switch (status) {
+    case "processed":
+    case "settled":
+      return "settled";
+    case "pending":
+      return "pending";
+    case "reversed":
+    case "partially_reversed":
+      return "reversed";
+    case "failed":
+      return "failed";
+    case "on_hold":
+    case "held":
+      return "on_hold";
+    default:
+      return "processing";
+  }
+}
+
+function mapTransfer(
+  raw: Record<string, unknown>,
+  provider: string,
+  paymentId?: string,
+): TransferResult {
+  const onHold = Boolean(raw.on_hold);
+  return {
+    id: String(raw.id ?? ""),
+    linkedAccountId: String(raw.recipient ?? raw.account ?? ""),
+    amount: Number(raw.amount ?? 0),
+    currency: String(raw.currency ?? "inr").toLowerCase(),
+    status: onHold ? "on_hold" : mapTransferStatus(String(raw.status ?? "pending")),
+    paymentId: paymentId ?? (raw.source ? String(raw.source) : undefined),
+    onHold,
+    provider,
+    providerResponse: raw,
+  };
 }
