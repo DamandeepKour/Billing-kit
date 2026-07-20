@@ -10,6 +10,7 @@ export type {
   Discount,
   GenerateInvoiceInput,
   Invoice,
+  InvoiceStatus,
   InvoiceSummary,
   InvoiceTaxMode,
   LineItem,
@@ -75,4 +76,19 @@ export type {
   SettlementFields,
   SettlementSummary,
 } from "./settlement";
+export type {
+  BillingAttemptKind,
+  BillingAttemptStatus,
+  BillingRetryAttempt,
+  BillingRetryHooks,
+  OpenBillingAttemptInput,
+  ReportBillingFailureInput,
+  ReportBillingRecoveryInput,
+  RetryAttemptFilter,
+  RetryHookHandler,
+  RetryHookName,
+  RetryLifecycleEvent,
+  RetryPolicyConfig,
+} from "./retry";
+export { DEFAULT_RETRY_POLICY } from "./retry";
 export type { GeneratePdfInput } from "./pdf";

@@ -33,6 +33,17 @@ export interface Discount {
   description?: string;
 }
 export type InvoiceTaxMode = "gst" | "vat" | "sales_tax" | "none";
+
+export type InvoiceStatus =
+  | "draft"
+  | "open"
+  | "paid"
+  | "void"
+  | "pending"
+  | "failed"
+  | "retrying"
+  | "recovered"
+  | "uncollectible";
 export interface GenerateInvoiceInput {
   customer: Customer;
   billingAddress: Address;
@@ -70,7 +81,7 @@ export interface InvoiceSummary {
 export interface Invoice extends InvoiceSummary {
   id: string;
   number: string;
-  status: "draft" | "open" | "paid" | "void";
+  status: InvoiceStatus;
   customer: Customer;
   billingAddress: Address;
   lineItems: LineItem[];

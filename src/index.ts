@@ -25,8 +25,10 @@ export type {
   Invoice,
   InvoiceSummary,
   InvoiceTaxMode,
+  InvoiceStatus,
   LineItem,
   NormalizedWebhookType,
+  OpenBillingAttemptInput,
   OrderResult,
   PauseCollectionBehavior,
   PauseSubscriptionInput,
@@ -40,8 +42,15 @@ export type {
   RecordTransactionInput,
   RefundPaymentInput,
   RefundResult,
+  ReportBillingFailureInput,
+  ReportBillingRecoveryInput,
   ReportingFilter,
   ReportUsageInput,
+  RetryAttemptFilter,
+  RetryHookHandler,
+  RetryHookName,
+  RetryLifecycleEvent,
+  RetryPolicyConfig,
   RevenueByCurrencyRow,
   SalesTaxInput,
   SetDefaultPaymentMethodInput,
@@ -49,6 +58,10 @@ export type {
   SettlementSummary,
   ExchangeRateMetadata,
   FeeBreakdown,
+  BillingAttemptKind,
+  BillingAttemptStatus,
+  BillingRetryAttempt,
+  BillingRetryHooks,
   Subscription,
   TaxBreakdown,
   TaxCalculationInput,
@@ -65,15 +78,25 @@ export type {
   WebhookEntityKind,
   WebhookEvent,
 } from "./types";
-export { RAZORPAY_WEBHOOK_EVENTS, TransactionStatus, TransactionType } from "./types";
+export {
+  DEFAULT_RETRY_POLICY,
+  RAZORPAY_WEBHOOK_EVENTS,
+  TransactionStatus,
+  TransactionType,
+} from "./types";
 export type {
   InvoiceRepository,
   PaymentGateway,
   RazorpayBillingProvider,
+  RetryAttemptRepository,
   StripeBillingProvider,
   TransactionRepository,
 } from "./interfaces";
-export { InMemoryInvoiceRepository, InMemoryTransactionRepository } from "./repositories";
+export {
+  InMemoryInvoiceRepository,
+  InMemoryRetryAttemptRepository,
+  InMemoryTransactionRepository,
+} from "./repositories";
 export {
   BillingKitError,
   CouponError,
@@ -85,6 +108,11 @@ export {
   UnsupportedCurrencyError,
   WebhookVerificationError,
 } from "./utils/errors";
+export {
+  InvalidRetryStateError,
+  RetryAttemptNotFoundError,
+  RetryService,
+} from "./retry";
 export {
   StripeAuthenticationError,
   StripeCardError,

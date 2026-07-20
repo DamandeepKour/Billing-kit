@@ -4,7 +4,10 @@ export type PaymentStatus =
   | "authorized"
   | "captured"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "retrying"
+  | "recovered"
+  | "uncollectible";
 export interface CreatePaymentInput {
   amount: number;
   currency?: string;

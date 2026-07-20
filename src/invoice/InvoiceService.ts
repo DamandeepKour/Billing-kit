@@ -155,4 +155,15 @@ export class InvoiceService {
   async getInvoice(invoiceId: string): Promise<Invoice | null> {
     return this.repository.findById(invoiceId);
   }
+
+  async updateInvoiceStatus(
+    invoiceId: string,
+    status: Invoice["status"],
+  ): Promise<Invoice> {
+    const invoice = await this.repository.findById(invoiceId);
+    if (!invoice) {
+      throw new InvoiceNotFoundError(invoiceId);
+    }
+    return this.repository.save({ ...invoice, status });
+  }
 }

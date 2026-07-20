@@ -18,6 +18,7 @@ npm install billing-kit
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
 - Multi-currency — presentment vs settlement, FX metadata, fee/net reporting (`inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`)
+- Retry / dunning — failed payment & invoice recovery with policy, grace period, and hooks
 
 ## Supported providers
 
@@ -645,6 +646,57 @@ const billing = new BillingKit({
 |-----------|---------|---------|
 | `InvoiceRepository` | `save`, `findById` | `InMemoryInvoiceRepository` |
 | `TransactionRepository` | `save`, `findById`, `list` | `InMemoryTransactionRepository` |
+| `RetryAttemptRepository` | `save`, `findById`, `findByReference`, `list` | `InMemoryRetryAttemptRepository` |
+
+## Payment & invoice retries (dunning)
+
+Configure Smart Retries–style recovery for failed payments and invoices: max retries, intervals, grace period, and hooks for email/webhook triggers.
+
+```typescript
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  retry: {
+    maxRetries: 3,
+    retryIntervalsMs: [
+      24 * 60 * 60 * 1000,
+      3 * 24 * 60 * 60 * 1000,
+      5 * 24 * 60 * 60 * 1000,
+    ],
+    gracePeriodMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  retryHooks: {
+    onPaymentFailed: async ({ attempt }) => { /* log / metrics */ },
+    onRetryScheduled: async ({ attempt }) => { /* queue job at attempt.nextRetryAt */ },
+    onPaymentRecovered: async ({ attempt }) => { /* restore access */ },
+    onMarkedUncollectible: async ({ attempt }) => { /* cancel subscription */ },
+    onRecoveryEmail: async ({ attempt }) => { /* send dunning email */ },
+    onRecoveryWebhook: async ({ attempt }) => { /* notify your backend */ },
+  },
+});
+
+await billing.openBillingAttempt({
+  kind: "invoice",
+  referenceId: invoice.id,
+  amount: invoice.total,
+  currency: invoice.currency,
+});
+
+await billing.reportBillingFailure({
+  kind: "invoice",
+  referenceId: invoice.id,
+  reason: "card_declined",
+});
+
+const due = await billing.processDueRetries();
+for (const attempt of due) {
+  // charge again via createPayment / provider, then:
+  // await billing.reportBillingRecovered({ referenceId: attempt.referenceId });
+  // or reportBillingFailure again
+}
+```
+
+States: `pending` → `failed` → `retrying` → `recovered` | `uncollectible`.
 
 ## Error handling
 
@@ -702,6 +754,7 @@ try {
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `applyCoupon`, `validateCoupon` |
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
+| Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
 | Webhook | `verifyWebhook` |
 
 ## Examples
@@ -727,6 +780,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Stripe customers, pause/resume, hosted invoices, metered usage |
 | Done | Razorpay orders, payment signature, fetch helpers, normalized webhooks |
 | Done | Presentment/settlement currencies, fee breakdown, revenue reporting |
+| Done | Payment/invoice retry (dunning), grace period, recovery hooks |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

@@ -36,15 +36,24 @@ import type { GSTInput, TaxBreakdown, TaxCalculationInput, VATInput } from "../t
 import type { RecordTransactionInput, Transaction } from "../types/transaction";
 import type { ReportingFilter } from "../types/settlement";
 import type { WebhookEvent } from "../types/webhook";
+import type {
+  BillingRetryAttempt,
+  OpenBillingAttemptInput,
+  ReportBillingFailureInput,
+  ReportBillingRecoveryInput,
+  RetryAttemptFilter,
+} from "../types/retry";
 import { CouponService } from "../coupon";
 import { InvoiceService } from "../invoice";
 import { InvoicePdfGenerator } from "../pdf";
 import { PaymentManager, PaymentService } from "../payment";
 import {
   InMemoryInvoiceRepository,
+  InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,
 } from "../repositories";
 import { RefundService } from "../refund";
+import { RetryService } from "../retry";
 import { SubscriptionService } from "../subscription";
 import { TaxService } from "../tax";
 import { TransactionService } from "../transaction";
@@ -61,6 +70,8 @@ export class BillingKit {
   private readonly transactionService: TransactionService;
   private readonly webhookService: WebhookService;
   private readonly pdfGenerator: InvoicePdfGenerator;
+  private readonly retryService: RetryService;
+
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
       throw new InvalidConfigError("secretKey is required");
@@ -76,6 +87,8 @@ export class BillingKit {
       this.config.invoiceRepository ?? new InMemoryInvoiceRepository();
     const transactionRepository =
       this.config.transactionRepository ?? new InMemoryTransactionRepository();
+    const retryAttemptRepository =
+      this.config.retryAttemptRepository ?? new InMemoryRetryAttemptRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
     this.invoiceService = new InvoiceService(this.config, invoiceRepository);
@@ -87,6 +100,11 @@ export class BillingKit {
     this.transactionService = new TransactionService(transactionRepository);
     this.webhookService = new WebhookService(gateway);
     this.pdfGenerator = new InvoicePdfGenerator(this.config);
+    this.retryService = new RetryService(
+      retryAttemptRepository,
+      this.config.retry,
+      this.config.retryHooks,
+    );
   }
   generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
     return this.invoiceService.generateInvoice(input);
@@ -205,7 +223,73 @@ export class BillingKit {
   getSettlementSummary(filter?: ReportingFilter) {
     return this.transactionService.getSettlementSummary(filter);
   }
+
+  openBillingAttempt(input: OpenBillingAttemptInput): Promise<BillingRetryAttempt> {
+    return this.withInvoiceSync(this.retryService.openAttempt(input));
+  }
+
+  reportBillingFailure(input: ReportBillingFailureInput): Promise<BillingRetryAttempt> {
+    return this.withInvoiceSync(this.retryService.reportFailure(input));
+  }
+
+  reportBillingRecovered(
+    input: ReportBillingRecoveryInput,
+  ): Promise<BillingRetryAttempt> {
+    return this.withInvoiceSync(this.retryService.reportRecovered(input));
+  }
+
+  markBillingUncollectible(
+    referenceId: string,
+    kind?: BillingRetryAttempt["kind"],
+  ): Promise<BillingRetryAttempt> {
+    return this.withInvoiceSync(
+      this.retryService.markUncollectible(referenceId, kind),
+    );
+  }
+
+  processDueRetries(now?: Date): Promise<BillingRetryAttempt[]> {
+    return this.retryService.processDueRetries(now);
+  }
+
+  getRetryAttempt(id: string): Promise<BillingRetryAttempt> {
+    return this.retryService.getAttempt(id);
+  }
+
+  getRetryAttemptByReference(
+    referenceId: string,
+    kind?: BillingRetryAttempt["kind"],
+  ): Promise<BillingRetryAttempt | null> {
+    return this.retryService.getAttemptByReference(referenceId, kind);
+  }
+
+  listRetryAttempts(filter?: RetryAttemptFilter): Promise<BillingRetryAttempt[]> {
+    return this.retryService.listAttempts(filter);
+  }
+
+  updateInvoiceStatus(
+    invoiceId: string,
+    status: Invoice["status"],
+  ): Promise<Invoice> {
+    return this.invoiceService.updateInvoiceStatus(invoiceId, status);
+  }
+
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
     return this.webhookService.verifyWebhook(payload, signature);
+  }
+
+  private async withInvoiceSync(
+    promise: Promise<BillingRetryAttempt>,
+  ): Promise<BillingRetryAttempt> {
+    const attempt = await promise;
+    if (attempt.kind === "invoice") {
+      const invoice = await this.invoiceService.getInvoice(attempt.referenceId);
+      if (invoice) {
+        await this.invoiceService.updateInvoiceStatus(
+          attempt.referenceId,
+          attempt.status,
+        );
+      }
+    }
+    return attempt;
   }
 }

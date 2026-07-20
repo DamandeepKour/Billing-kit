@@ -1,6 +1,10 @@
 import type { InvoiceRepository } from "../interfaces/InvoiceRepository";
 import type { TransactionRepository } from "../interfaces/TransactionRepository";
+import type { RetryAttemptRepository } from "../interfaces/RetryAttemptRepository";
+import type { BillingRetryHooks, RetryPolicyConfig } from "./retry";
+
 export type BillingProvider = "stripe" | "razorpay";
+
 export interface CompanyDetails {
   name: string;
   address: string;
@@ -11,6 +15,7 @@ export interface CompanyDetails {
   vatNumber?: string;
   logoUrl?: string;
 }
+
 export interface TaxConfig {
   enabled: boolean;
   autoTax?: boolean;
@@ -19,6 +24,7 @@ export interface TaxConfig {
   sellerState?: string;
   sellerCountry?: string;
 }
+
 export interface BillingKitConfig {
   provider: BillingProvider;
   secretKey: string;
@@ -27,6 +33,9 @@ export interface BillingKitConfig {
   currency?: string;
   company?: CompanyDetails;
   tax?: TaxConfig;
+  retry?: RetryPolicyConfig;
+  retryHooks?: BillingRetryHooks;
   invoiceRepository?: InvoiceRepository;
   transactionRepository?: TransactionRepository;
+  retryAttemptRepository?: RetryAttemptRepository;
 }
