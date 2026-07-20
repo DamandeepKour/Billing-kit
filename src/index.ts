@@ -7,6 +7,11 @@ export type {
   AppliedPromotion,
   AttachPaymentMethodInput,
   AttachProfilePaymentMethodInput,
+  AuditAction,
+  AuditActor,
+  AuditLogEntry,
+  AuditLogFilter,
+  AuditResourceType,
   BillingAttemptKind,
   BillingAttemptStatus,
   BillingInterval,
@@ -17,6 +22,8 @@ export type {
   CapturePaymentInput,
   CheckoutDiscountInput,
   CheckoutDiscountResult,
+  CommissionRule,
+  CommissionType,
   CompanyDetails,
   Coupon,
   CouponDuration,
@@ -29,12 +36,14 @@ export type {
   CreatePromotionCodeInput,
   CreateProviderCustomerInput,
   CreateSubscriptionInput,
+  CreateTransferInput,
   Customer,
   CustomerBillingProfile,
   Discount,
   DiscountLineItem,
   GenerateInvoiceInput,
   GeneratePdfInput,
+  GetSettlementDetailsInput,
   GSTInput,
   Invoice,
   InvoiceSummary,
@@ -56,6 +65,7 @@ export type {
   ProviderCustomer,
   ProviderInvoice,
   RazorpayWebhookEventName,
+  RecordBillingEventInput,
   RecordTransactionInput,
   RefundPaymentInput,
   RefundResult,
@@ -69,6 +79,7 @@ export type {
   RetryLifecycleEvent,
   RetryPolicyConfig,
   RevenueByCurrencyRow,
+  ReverseTransferInput,
   SalesTaxInput,
   SavedPaymentMethod,
   SetDefaultPaymentMethodInput,
@@ -92,11 +103,6 @@ export type {
   TransferResult,
   TransferRule,
   TransferSettlementStatus,
-  CreateTransferInput,
-  GetSettlementDetailsInput,
-  ReverseTransferInput,
-  CommissionRule,
-  CommissionType,
   UpdateCustomerProfileInput,
   UpdatePlanInput,
   UsageRecord,
@@ -114,12 +120,14 @@ export {
   TransactionType,
   profileToCustomer,
 } from "./types";
+export { AuditLogService } from "./audit";
 export { CouponService, resolveCouponValue } from "./coupon";
 export {
   CustomerProfileService,
   CustomerProfileNotFoundError,
 } from "./customer";
 export type {
+  AuditLogRepository,
   CustomerProfileRepository,
   InvoiceRepository,
   PaymentGateway,
@@ -130,6 +138,7 @@ export type {
   TransactionRepository,
 } from "./interfaces";
 export {
+  InMemoryAuditLogRepository,
   InMemoryCustomerProfileRepository,
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
@@ -177,6 +186,7 @@ export {
   resolveTransferAmount,
   SplitValidationError,
 } from "./utils/split";
+export { maskSensitiveFields, summarizePayload } from "./utils/mask";
 export { RouteService } from "./route";
 export {
   TaxEngine,

@@ -1,5 +1,10 @@
 import type { BillingKitConfig } from "../types/config";
 import type {
+  AuditLogEntry,
+  AuditLogFilter,
+  RecordBillingEventInput,
+} from "../types/audit";
+import type {
   ApplyCouponInput,
   ApplyPromotionCodeInput,
   CheckoutDiscountInput,
@@ -69,14 +74,14 @@ import type {
   TransferReversalResult,
   TransferResult,
 } from "../types/route";
+import { AuditLogService } from "../audit";
 import { CouponService } from "../coupon";
-import {
-  CustomerProfileService,
-} from "../customer";
+import { CustomerProfileService } from "../customer";
 import { InvoiceService } from "../invoice";
 import { InvoicePdfGenerator } from "../pdf";
 import { PaymentManager, PaymentService } from "../payment";
 import {
+  InMemoryAuditLogRepository,
   InMemoryCustomerProfileRepository,
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
@@ -90,6 +95,7 @@ import { TaxService } from "../tax";
 import { TransactionService } from "../transaction";
 import { InvalidConfigError } from "../utils/errors";
 import { WebhookService } from "../webhook";
+
 export class BillingKit {
   private readonly config: BillingKitConfig;
   private readonly invoiceService: InvoiceService;
@@ -104,6 +110,7 @@ export class BillingKit {
   private readonly retryService: RetryService;
   private readonly customerProfileService: CustomerProfileService;
   private readonly routeService: RouteService;
+  private readonly auditLogService: AuditLogService;
 
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
@@ -125,6 +132,8 @@ export class BillingKit {
     const customerProfileRepository =
       this.config.customerProfileRepository ??
       new InMemoryCustomerProfileRepository();
+    const auditLogRepository =
+      this.config.auditLogRepository ?? new InMemoryAuditLogRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
     this.couponService = new CouponService();
@@ -156,73 +165,154 @@ export class BillingKit {
       this.config.retryHooks,
     );
     this.routeService = new RouteService(gateway, this.transactionService);
+    this.auditLogService = new AuditLogService(
+      auditLogRepository,
+      this.config.provider,
+      this.config.auditActor,
+    );
   }
+
   generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
-    return this.invoiceService.generateInvoice(input);
+    return this.withAudit(
+      () => this.invoiceService.generateInvoice(input),
+      (invoice) => ({
+        action: "invoice.created",
+        resourceType: "invoice",
+        resourceId: invoice.id,
+        payload: {
+          invoiceNumber: invoice.number,
+          status: invoice.status,
+          total: invoice.total,
+          currency: invoice.currency,
+          customerEmail: invoice.customer?.email,
+        },
+      }),
+    );
   }
+
   getInvoiceSummary(invoiceId: string): Promise<InvoiceSummary> {
     return this.invoiceService.getInvoiceSummary(invoiceId);
   }
+
   getInvoice(invoiceId: string): Promise<Invoice | null> {
     return this.invoiceService.getInvoice(invoiceId);
   }
+
   generateInvoicePdf(input: GeneratePdfInput): Promise<Buffer> {
     return this.pdfGenerator.generateInvoicePdf(input);
   }
+
   createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
-    return this.paymentService.createPayment(input);
+    return this.withPaymentAudit(
+      () => this.paymentService.createPayment(input),
+      "payment.attempted",
+      input,
+    );
   }
+
   createOrder(input: CreateOrderInput): Promise<OrderResult> {
     return this.paymentService.createOrder(input);
   }
+
   verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean {
     return this.paymentService.verifyPaymentSignature(input);
   }
+
   fetchPayment(paymentId: string): Promise<PaymentResult> {
     return this.paymentService.fetchPayment(paymentId);
   }
+
   fetchRefund(refundId: string): Promise<RefundResult> {
     return this.paymentService.fetchRefund(refundId);
   }
+
   capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
-    return this.paymentService.capturePayment(input);
+    return this.withPaymentAudit(
+      () => this.paymentService.capturePayment(input),
+      "payment.captured",
+      { paymentId: input.paymentId, amount: input.amount },
+    );
   }
+
   cancelPayment(paymentId: string): Promise<PaymentResult> {
-    return this.paymentService.cancelPayment(paymentId);
+    return this.withPaymentAudit(
+      () => this.paymentService.cancelPayment(paymentId),
+      "payment.cancelled",
+      { paymentId },
+    );
   }
+
   getPaymentStatus(paymentId: string): Promise<PaymentResult> {
     return this.paymentService.getPaymentStatus(paymentId);
   }
+
   refundPayment(input: RefundPaymentInput): Promise<RefundResult> {
-    return this.refundService.refundPayment(input);
+    return this.withAudit(
+      () => this.refundService.refundPayment(input),
+      (refund) => ({
+        action: "refund.created",
+        resourceType: "refund",
+        resourceId: refund.id,
+        relatedResourceIds: [input.paymentId],
+        payload: {
+          paymentId: input.paymentId,
+          amount: refund.amount,
+          status: refund.status,
+        },
+      }),
+      async (error) => {
+        await this.auditLogService.recordBillingEvent({
+          action: "refund.created",
+          resourceType: "refund",
+          resourceId: input.paymentId,
+          relatedResourceIds: [input.paymentId],
+          payload: {
+            paymentId: input.paymentId,
+            amount: input.amount,
+            status: "failed",
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      },
+    );
   }
+
   createPlan(input: CreatePlanInput): Promise<Plan> {
     return this.subscriptionService.createPlan(input);
   }
+
   updatePlan(input: UpdatePlanInput): Promise<Plan> {
     return this.subscriptionService.updatePlan(input);
   }
+
   cancelPlan(planId: string): Promise<Plan> {
     return this.subscriptionService.cancelPlan(planId);
   }
+
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription> {
     return this.subscriptionService.createSubscription(input);
   }
+
   cancelSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.cancelSubscription(subscriptionId);
   }
+
   renewSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.renewSubscription(subscriptionId);
   }
+
   pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
     return this.subscriptionService.pauseSubscription(input);
   }
+
   resumeSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.resumeSubscription(subscriptionId);
   }
+
   retrieveSubscription(subscriptionId: string): Promise<Subscription> {
     return this.subscriptionService.retrieveSubscription(subscriptionId);
   }
+
   createCustomer(input: CreateProviderCustomerInput): Promise<ProviderCustomer> {
     return this.subscriptionService.createCustomer(input);
   }
@@ -278,25 +368,72 @@ export class BillingKit {
   retrieveProviderInvoice(invoiceId: string): Promise<ProviderInvoice> {
     return this.subscriptionService.retrieveProviderInvoice(invoiceId);
   }
+
   reportUsage(input: ReportUsageInput): Promise<UsageRecord> {
     return this.subscriptionService.reportUsage(input);
   }
+
   calculateGST(input: GSTInput): TaxBreakdown {
     const rate = input.rate ?? this.config.tax?.defaultRate;
-    return this.taxService.calculateGST({ ...input, rate });
+    const breakdown = this.taxService.calculateGST({ ...input, rate });
+    this.queueAudit({
+      action: "tax.calculated",
+      resourceType: "tax",
+      resourceId: `gst_${Date.now()}`,
+      payload: {
+        taxType: "gst",
+        amount: input.amount,
+        totalTax: breakdown.totalTax,
+        total: breakdown.total,
+        taxPercent: breakdown.taxPercent,
+        sellerState: input.sellerState,
+        buyerState: input.buyerState,
+      },
+    });
+    return breakdown;
   }
+
   calculateVAT(input: VATInput): TaxBreakdown {
-    return this.taxService.calculateVAT(input);
+    const breakdown = this.taxService.calculateVAT(input);
+    this.queueAudit({
+      action: "tax.calculated",
+      resourceType: "tax",
+      resourceId: `vat_${Date.now()}`,
+      payload: {
+        taxType: "vat",
+        amount: input.amount,
+        totalTax: breakdown.totalTax,
+        total: breakdown.total,
+        taxPercent: breakdown.taxPercent,
+        country: input.country,
+      },
+    });
+    return breakdown;
   }
+
   calculateTax(input: TaxCalculationInput): TaxBreakdown {
-    return this.taxService.calculate({
+    const breakdown = this.taxService.calculate({
       ...input,
       rate: input.rate ?? this.config.tax?.defaultRate,
       autoTax: input.autoTax ?? this.config.tax?.autoTax,
       sellerState: input.sellerState ?? this.config.tax?.sellerState,
       country: input.country ?? this.config.tax?.sellerCountry ?? input.country,
     });
+    this.queueAudit({
+      action: "tax.calculated",
+      resourceType: "tax",
+      resourceId: `tax_${Date.now()}`,
+      payload: {
+        taxType: breakdown.taxType ?? input.taxType,
+        amount: input.amount,
+        totalTax: breakdown.totalTax,
+        total: breakdown.total,
+        taxPercent: breakdown.taxPercent,
+      },
+    });
+    return breakdown;
   }
+
   applyCoupon(input: ApplyCouponInput): CouponResult {
     return this.couponService.applyCoupon(input);
   }
@@ -317,7 +454,10 @@ export class BillingKit {
     return this.couponService.applyPromotionCode(input);
   }
 
-  removePromotionCode(input: { amount: number; currency?: string }): CheckoutDiscountResult {
+  removePromotionCode(input: {
+    amount: number;
+    currency?: string;
+  }): CheckoutDiscountResult {
     return this.couponService.removePromotionCode(input);
   }
 
@@ -334,14 +474,32 @@ export class BillingKit {
   }
 
   recordTransaction(input: RecordTransactionInput): Promise<Transaction> {
-    return this.transactionService.recordTransaction(input);
+    return this.withAudit(
+      () => this.transactionService.recordTransaction(input),
+      (txn) => ({
+        action: "transaction.recorded",
+        resourceType: "transaction",
+        resourceId: txn.id,
+        relatedResourceIds: txn.referenceId ? [txn.referenceId] : undefined,
+        payload: {
+          type: txn.type,
+          amount: txn.amount,
+          currency: txn.currency,
+          status: txn.status,
+          referenceId: txn.referenceId,
+        },
+      }),
+    );
   }
+
   getTransaction(id: string): Promise<Transaction> {
     return this.transactionService.getTransaction(id);
   }
+
   getRevenueByCurrency(filter?: ReportingFilter) {
     return this.transactionService.getRevenueByCurrency(filter);
   }
+
   getSettlementSummary(filter?: ReportingFilter) {
     return this.transactionService.getSettlementSummary(filter);
   }
@@ -412,11 +570,60 @@ export class BillingKit {
     invoiceId: string,
     status: Invoice["status"],
   ): Promise<Invoice> {
-    return this.invoiceService.updateInvoiceStatus(invoiceId, status);
+    return this.withAudit(
+      () => this.invoiceService.updateInvoiceStatus(invoiceId, status),
+      (invoice) => ({
+        action: "invoice.status_updated",
+        resourceType: "invoice",
+        resourceId: invoice.id,
+        payload: {
+          invoiceNumber: invoice.number,
+          status: invoice.status,
+        },
+      }),
+    );
   }
 
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
-    return this.webhookService.verifyWebhook(payload, signature);
+    const event = this.webhookService.verifyWebhook(payload, signature);
+    this.queueAudit({
+      action: "webhook.received",
+      resourceType: "webhook",
+      resourceId: event.id,
+      actor: { type: "webhook", id: event.provider },
+      relatedResourceIds: event.entity?.id ? [event.entity.id] : undefined,
+      payload: {
+        type: event.type,
+        normalizedType: event.normalizedType,
+        entityKind: event.entity?.kind,
+        entityId: event.entity?.id,
+        entityStatus: event.entity?.status,
+      },
+    });
+    return event;
+  }
+
+  recordBillingEvent(input: RecordBillingEventInput): Promise<AuditLogEntry> {
+    return this.auditLogService.recordBillingEvent({
+      ...input,
+      provider: input.provider ?? this.config.provider,
+    });
+  }
+
+  getInvoiceTimeline(invoiceId: string): Promise<AuditLogEntry[]> {
+    return this.auditLogService.getInvoiceTimeline(invoiceId);
+  }
+
+  getPaymentAuditLog(paymentId: string): Promise<AuditLogEntry[]> {
+    return this.auditLogService.getPaymentAuditLog(paymentId);
+  }
+
+  listAuditEvents(filter?: AuditLogFilter): Promise<AuditLogEntry[]> {
+    return this.auditLogService.listAuditEvents(filter);
+  }
+
+  getAuditEvent(id: string): Promise<AuditLogEntry | null> {
+    return this.auditLogService.getAuditEvent(id);
   }
 
   private async withInvoiceSync(
@@ -433,5 +640,58 @@ export class BillingKit {
       }
     }
     return attempt;
+  }
+
+  private queueAudit(input: RecordBillingEventInput): void {
+    void this.auditLogService.recordBillingEvent(input).catch(() => undefined);
+  }
+
+  private async withAudit<T>(
+    run: () => Promise<T>,
+    toEvent: (result: T) => RecordBillingEventInput,
+    onError?: (error: unknown) => Promise<void>,
+  ): Promise<T> {
+    try {
+      const result = await run();
+      await this.auditLogService.recordBillingEvent(toEvent(result));
+      return result;
+    } catch (error) {
+      if (onError) await onError(error);
+      throw error;
+    }
+  }
+
+  private async withPaymentAudit(
+    run: () => Promise<PaymentResult>,
+    action: "payment.attempted" | "payment.captured" | "payment.cancelled",
+    input: { paymentId?: string; amount?: number; currency?: string },
+  ): Promise<PaymentResult> {
+    try {
+      const result = await run();
+      await this.auditLogService.recordBillingEvent({
+        action,
+        resourceType: "payment",
+        resourceId: result.id,
+        payload: {
+          amount: result.amount,
+          currency: result.currency,
+          status: result.status,
+        },
+      });
+      return result;
+    } catch (error) {
+      await this.auditLogService.recordBillingEvent({
+        action: "payment.failed",
+        resourceType: "payment",
+        resourceId: input.paymentId ?? "unknown",
+        payload: {
+          amount: input.amount,
+          currency: input.currency,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
+    }
   }
 }

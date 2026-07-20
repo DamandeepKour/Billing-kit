@@ -17,6 +17,7 @@ npm install billing-kit
 - Coupons & promotion codes — amountOff / percentOff, duration, usage limits, checkout apply/remove
 - Customer billing profiles — reusable tax IDs, address, currency, saved payment methods
 - Marketplace routing — split payments, transfers, reversals (Razorpay Route)
+- Audit trail — invoice, payment, refund, tax, and webhook event timelines
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
 - Multi-currency — presentment vs settlement, FX metadata, fee/net reporting (`inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`)
@@ -788,6 +789,37 @@ const billing = new BillingKit({
 | `TransactionRepository` | `save`, `findById`, `list` | `InMemoryTransactionRepository` |
 | `RetryAttemptRepository` | `save`, `findById`, `findByReference`, `list` | `InMemoryRetryAttemptRepository` |
 | `CustomerProfileRepository` | `save`, `findById`, `findByEmail`, `list`, `delete` | `InMemoryCustomerProfileRepository` |
+| `AuditLogRepository` | `save`, `findById`, `list` | `InMemoryAuditLogRepository` |
+
+## Audit trail
+
+BillingKit records a unified event timeline for support, reconciliation, and compliance. Sensitive fields (secrets, tokens, card numbers) are masked before persistence.
+
+```typescript
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  auditLogRepository: myAuditRepo, // optional; defaults to in-memory
+  auditActor: { type: "api", id: "checkout-service" },
+});
+
+await billing.generateInvoice({ /* ... */ });
+await billing.createPayment({ /* ... */ });
+await billing.refundPayment({ paymentId: "pay_xxx", amount: 500 });
+billing.calculateTax({ amount: 10000, taxType: "gst", rate: 18, sellerState: "MH", buyerState: "KA" });
+
+const timeline = await billing.getInvoiceTimeline("inv_xxx");
+const paymentLog = await billing.getPaymentAuditLog("pay_xxx");
+
+await billing.recordBillingEvent({
+  action: "billing.event",
+  resourceType: "invoice",
+  resourceId: "inv_xxx",
+  payload: { note: "manual adjustment", secretKey: "will-be-masked" },
+});
+```
+
+Each entry includes `timestamp`, `actor`, `provider`, `resourceType`, `resourceId`, and a masked `payloadSummary`.
 
 ## Payment & invoice retries (dunning)
 
@@ -896,6 +928,7 @@ try {
 | Coupon | `registerCoupon`, `createPromotionCode`, `applyCoupon`, `applyPromotionCode`, `removePromotionCode`, `applyCheckoutDiscount`, `validateCoupon` |
 | Customer profile | `createCustomerProfile`, `updateCustomerProfile`, `getCustomerProfile`, `attachPaymentMethod`, `setDefaultPaymentMethod` |
 | Route / splits | `splitPayment`, `createTransfer`, `reverseTransfer`, `getSettlementDetails`, `calculateSplit` |
+| Audit | `recordBillingEvent`, `getInvoiceTimeline`, `getPaymentAuditLog`, `listAuditEvents` |
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
 | Webhook | `verifyWebhook` |
@@ -926,6 +959,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Payment/invoice retry (dunning), grace period, recovery hooks |
 | Done | Customer billing profiles with reusable payment methods |
 | Done | Razorpay Route payment splits, transfers, reversals |
+| Done | Unified billing audit trail with sensitive-field masking |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

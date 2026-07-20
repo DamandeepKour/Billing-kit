@@ -131,3 +131,11 @@ export type {
 } from "./customer-profile";
 export { profileToCustomer } from "./customer-profile";
 export type { GeneratePdfInput } from "./pdf";
+export type {
+  AuditAction,
+  AuditActor,
+  AuditLogEntry,
+  AuditLogFilter,
+  AuditResourceType,
+  RecordBillingEventInput,
+} from "./audit";

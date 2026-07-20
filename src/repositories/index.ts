@@ -1,4 +1,5 @@
 export {
+  InMemoryAuditLogRepository,
   InMemoryInvoiceRepository,
   InMemoryTransactionRepository,
   InMemoryRetryAttemptRepository,

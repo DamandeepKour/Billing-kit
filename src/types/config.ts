@@ -1,6 +1,8 @@
+import type { AuditLogRepository } from "../interfaces/AuditLogRepository";
 import type { InvoiceRepository } from "../interfaces/InvoiceRepository";
 import type { TransactionRepository } from "../interfaces/TransactionRepository";
 import type { RetryAttemptRepository } from "../interfaces/RetryAttemptRepository";
+import type { AuditActor } from "./audit";
 import type { BillingRetryHooks, RetryPolicyConfig } from "./retry";
 
 export type BillingProvider = "stripe" | "razorpay";
@@ -39,4 +41,6 @@ export interface BillingKitConfig {
   transactionRepository?: TransactionRepository;
   retryAttemptRepository?: RetryAttemptRepository;
   customerProfileRepository?: import("../interfaces/CustomerProfileRepository").CustomerProfileRepository;
+  auditLogRepository?: AuditLogRepository;
+  auditActor?: AuditActor;
 }
