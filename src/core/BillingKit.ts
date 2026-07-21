@@ -49,7 +49,13 @@ import type {
 import type { GSTInput, TaxBreakdown, TaxCalculationInput, VATInput } from "../types/tax";
 import type { RecordTransactionInput, Transaction } from "../types/transaction";
 import type { ReportingFilter } from "../types/settlement";
-import type { WebhookEvent } from "../types/webhook";
+import type {
+  ProcessWebhookResult,
+  RawWebhookRequest,
+  WebhookEvent,
+  WebhookEventHandler,
+  WebhookEventRecord,
+} from "../types/webhook";
 import type {
   BillingRetryAttempt,
   OpenBillingAttemptInput,
@@ -86,6 +92,7 @@ import {
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,
+  InMemoryWebhookEventRepository,
 } from "../repositories";
 import { RefundService } from "../refund";
 import { RetryService } from "../retry";
@@ -134,6 +141,9 @@ export class BillingKit {
       new InMemoryCustomerProfileRepository();
     const auditLogRepository =
       this.config.auditLogRepository ?? new InMemoryAuditLogRepository();
+    const webhookEventRepository =
+      this.config.webhookEventRepository ??
+      new InMemoryWebhookEventRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
     this.couponService = new CouponService();
@@ -157,7 +167,7 @@ export class BillingKit {
     this.subscriptionService = new SubscriptionService(gateway, this.couponService);
     this.taxService = new TaxService();
     this.transactionService = new TransactionService(transactionRepository);
-    this.webhookService = new WebhookService(gateway);
+    this.webhookService = new WebhookService(gateway, webhookEventRepository);
     this.pdfGenerator = new InvoicePdfGenerator(this.config);
     this.retryService = new RetryService(
       retryAttemptRepository,
@@ -601,6 +611,42 @@ export class BillingKit {
       },
     });
     return event;
+  }
+
+  async processWebhook(
+    request: RawWebhookRequest,
+    handler: WebhookEventHandler,
+  ): Promise<ProcessWebhookResult> {
+    const result = await this.webhookService.processWebhook(request, handler);
+    this.queueAudit({
+      action: "webhook.received",
+      resourceType: "webhook",
+      resourceId: result.record.eventId,
+      actor: { type: "webhook", id: result.event.provider },
+      relatedResourceIds: result.event.entity.id
+        ? [result.event.entity.id]
+        : undefined,
+      payload: {
+        type: result.event.type,
+        normalizedType: result.event.normalizedType,
+        entityKind: result.event.entity.kind,
+        entityId: result.event.entity.id,
+        processingStatus: result.record.status,
+        duplicate: result.duplicate,
+        outOfOrder: result.outOfOrder,
+      },
+    });
+    return result;
+  }
+
+  createRawWebhookHandler(
+    handler: WebhookEventHandler,
+  ): (request: RawWebhookRequest) => Promise<ProcessWebhookResult> {
+    return (request) => this.processWebhook(request, handler);
+  }
+
+  listWebhookEvents(): Promise<WebhookEventRecord[]> {
+    return this.webhookService.listWebhookEvents();
   }
 
   recordBillingEvent(input: RecordBillingEventInput): Promise<AuditLogEntry> {

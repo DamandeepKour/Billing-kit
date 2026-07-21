@@ -20,6 +20,7 @@ export type {
   BillingRetryAttempt,
   BillingRetryHooks,
   CapturePaymentInput,
+  ClaimWebhookEventResult,
   CheckoutDiscountInput,
   CheckoutDiscountResult,
   CommissionRule,
@@ -61,9 +62,11 @@ export type {
   PaymentResult,
   PaymentStatus,
   Plan,
+  ProcessWebhookResult,
   PromotionCode,
   ProviderCustomer,
   ProviderInvoice,
+  RawWebhookRequest,
   RazorpayWebhookEventName,
   RecordBillingEventInput,
   RecordTransactionInput,
@@ -112,6 +115,9 @@ export type {
   WebhookEntity,
   WebhookEntityKind,
   WebhookEvent,
+  WebhookEventHandler,
+  WebhookEventRecord,
+  WebhookProcessingStatus,
 } from "./types";
 export {
   DEFAULT_RETRY_POLICY,
@@ -136,6 +142,7 @@ export type {
   RouteTransferProvider,
   StripeBillingProvider,
   TransactionRepository,
+  WebhookEventRepository,
 } from "./interfaces";
 export {
   InMemoryAuditLogRepository,
@@ -143,6 +150,7 @@ export {
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,
+  InMemoryWebhookEventRepository,
 } from "./repositories";
 export {
   BillingKitError,

@@ -452,7 +452,13 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
         signature,
         this.config.webhookSecret,
       );
-      return normalizeStripeWebhook(event.id, event.type, event.data.object, this.name);
+      return normalizeStripeWebhook(
+        event.id,
+        event.type,
+        event.data.object,
+        this.name,
+        event.created,
+      );
     } catch (error) {
       mapStripeError(error);
     }

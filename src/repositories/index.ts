@@ -4,4 +4,5 @@ export {
   InMemoryTransactionRepository,
   InMemoryRetryAttemptRepository,
   InMemoryCustomerProfileRepository,
+  InMemoryWebhookEventRepository,
 } from "./in-memory";

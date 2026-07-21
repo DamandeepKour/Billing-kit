@@ -134,6 +134,140 @@ describe("Razorpay subscription webhook parsing", () => {
   });
 });
 
+describe("Webhook idempotency", () => {
+  function billing(): BillingKit {
+    return new BillingKit({
+      provider: "razorpay",
+      keyId: "rzp_test",
+      secretKey: keySecret,
+      webhookSecret: secret,
+    });
+  }
+
+  it("processes a duplicate delivery only once", async () => {
+    const body = JSON.stringify({
+      event: "payment.captured",
+      created_at: 1_700_000_000,
+      payload: {
+        payment: {
+          entity: {
+            id: "pay_duplicate",
+            amount: 5000,
+            currency: "INR",
+            status: "captured",
+            created_at: 1_700_000_000,
+          },
+        },
+      },
+    });
+    const handler = jest.fn();
+    const process = billing().createRawWebhookHandler(handler);
+    const request = {
+      rawBody: Buffer.from(body),
+      signature: sign(body),
+      eventId: "rzp_event_duplicate",
+    };
+
+    const first = await process(request);
+    const duplicate = await process(request);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(first.record).toMatchObject({
+      eventId: "rzp_event_duplicate",
+      provider: "razorpay",
+      status: "processed",
+    });
+    expect(first.record.receivedAt).toBeInstanceOf(Date);
+    expect(first.record.processedAt).toBeInstanceOf(Date);
+    expect(duplicate.duplicate).toBe(true);
+    expect(duplicate.outOfOrder).toBe(false);
+  });
+
+  it("uses a raw-body fingerprint when Razorpay event ID is unavailable", async () => {
+    const body = JSON.stringify({
+      event: "refund.processed",
+      payload: {
+        refund: {
+          entity: {
+            id: "rfnd_fingerprint",
+            payment_id: "pay_fingerprint",
+            status: "processed",
+          },
+        },
+      },
+    });
+    const handler = jest.fn();
+    const sdk = billing();
+
+    const first = await sdk.processWebhook(
+      { rawBody: body, signature: sign(body) },
+      handler,
+    );
+    const duplicate = await sdk.processWebhook(
+      { rawBody: body, signature: sign(body) },
+      handler,
+    );
+
+    expect(first.record.eventId).toMatch(/^sha256:/);
+    expect(duplicate.duplicate).toBe(true);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an older event delivered after a newer resource event", async () => {
+    const newerBody = JSON.stringify({
+      event: "payment.captured",
+      created_at: 1_700_000_200,
+      payload: {
+        payment: {
+          entity: {
+            id: "pay_unordered",
+            status: "captured",
+            created_at: 1_700_000_200,
+          },
+        },
+      },
+    });
+    const olderBody = JSON.stringify({
+      event: "payment.authorized",
+      created_at: 1_700_000_100,
+      payload: {
+        payment: {
+          entity: {
+            id: "pay_unordered",
+            status: "authorized",
+            created_at: 1_700_000_100,
+          },
+        },
+      },
+    });
+    const handler = jest.fn();
+    const sdk = billing();
+
+    await sdk.processWebhook(
+      {
+        rawBody: newerBody,
+        signature: sign(newerBody),
+        eventId: "rzp_event_newer",
+      },
+      handler,
+    );
+    const older = await sdk.processWebhook(
+      {
+        rawBody: olderBody,
+        signature: sign(olderBody),
+        eventId: "rzp_event_older",
+      },
+      handler,
+    );
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(older.outOfOrder).toBe(true);
+    expect(older.duplicate).toBe(false);
+    expect(older.record.status).toBe("ignored");
+    expect(older.record.processedAt).toBeInstanceOf(Date);
+  });
+});
+
 describe("Razorpay payment signature", () => {
   it("verifies checkout order|payment signature", () => {
     const orderId = "order_1";

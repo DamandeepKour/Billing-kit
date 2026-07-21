@@ -647,6 +647,8 @@ Helpers: `calculateGST()`, `calculateVAT()`, `calculateTax()`.
 
 Always verify with the **raw request body**. Do not `JSON.parse` or otherwise transform the body before verification — Razorpay and Stripe both require the exact bytes that were signed.
 
+Use `processWebhook` or `createRawWebhookHandler` to combine signature verification, atomic deduplication, and safe handling of out-of-order events. Duplicate and stale deliveries return successfully without invoking your handler.
+
 ### Express — Razorpay (raw body)
 
 ```typescript
@@ -662,11 +664,25 @@ const billing = new BillingKit({
   webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET!,
 });
 
+const processWebhook = billing.createRawWebhookHandler(async (event) => {
+  switch (event.normalizedType) {
+    case "payment.captured":
+    case "refund.processed":
+    case "subscription.activated":
+    case "subscription.charged":
+    case "subscription.cancelled":
+      // grant / revoke access, record ledger, etc.
+      break;
+    default:
+      break;
+  }
+});
+
 // Important: use express.raw on this route only — not express.json()
 app.post(
   "/webhooks/razorpay",
   express.raw({ type: "application/json" }),
-  (req, res) => {
+  async (req, res) => {
     const signature = req.headers["x-razorpay-signature"];
     if (typeof signature !== "string") {
       res.status(400).send("Missing signature");
@@ -674,24 +690,16 @@ app.post(
     }
 
     try {
-      const event = billing.verifyWebhook(req.body, signature);
-      // event.type              → raw Razorpay event (e.g. subscription.charged)
-      // event.normalizedType    → shared name (payment.captured, subscription.cancelled, …)
-      // event.entity            → { id, kind, amount, currency, status, parentId }
-
-      switch (event.normalizedType) {
-        case "payment.captured":
-        case "refund.processed":
-        case "subscription.activated":
-        case "subscription.charged":
-        case "subscription.cancelled":
-          // grant / revoke access, record ledger, etc.
-          break;
-        default:
-          break;
-      }
-
-      res.json({ received: true });
+      const result = await processWebhook({
+        rawBody: req.body,
+        signature,
+        eventId: req.headers["x-razorpay-event-id"] as string | undefined,
+      });
+      res.json({
+        received: true,
+        duplicate: result.duplicate,
+        outOfOrder: result.outOfOrder,
+      });
     } catch (err) {
       if (err instanceof WebhookVerificationError) {
         res.status(400).send("Invalid signature");
@@ -790,6 +798,7 @@ const billing = new BillingKit({
 | `RetryAttemptRepository` | `save`, `findById`, `findByReference`, `list` | `InMemoryRetryAttemptRepository` |
 | `CustomerProfileRepository` | `save`, `findById`, `findByEmail`, `list`, `delete` | `InMemoryCustomerProfileRepository` |
 | `AuditLogRepository` | `save`, `findById`, `list` | `InMemoryAuditLogRepository` |
+| `WebhookEventRepository` | `claim`, `save`, `find`, `list` | `InMemoryWebhookEventRepository` |
 
 ## Audit trail
 
@@ -931,7 +940,7 @@ try {
 | Audit | `recordBillingEvent`, `getInvoiceTimeline`, `getPaymentAuditLog`, `listAuditEvents` |
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
-| Webhook | `verifyWebhook` |
+| Webhook | `verifyWebhook`, `processWebhook`, `createRawWebhookHandler`, `listWebhookEvents` |
 
 ## Examples
 
@@ -960,6 +969,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Customer billing profiles with reusable payment methods |
 | Done | Razorpay Route payment splits, transfers, reversals |
 | Done | Unified billing audit trail with sensitive-field masking |
+| Done | Webhook idempotency, duplicate suppression, out-of-order protection |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

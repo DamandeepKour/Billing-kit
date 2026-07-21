@@ -2,6 +2,7 @@ import type { AuditLogRepository } from "../interfaces/AuditLogRepository";
 import type { InvoiceRepository } from "../interfaces/InvoiceRepository";
 import type { TransactionRepository } from "../interfaces/TransactionRepository";
 import type { RetryAttemptRepository } from "../interfaces/RetryAttemptRepository";
+import type { WebhookEventRepository } from "../interfaces/WebhookEventRepository";
 import type { AuditActor } from "./audit";
 import type { BillingRetryHooks, RetryPolicyConfig } from "./retry";
 
@@ -43,4 +44,5 @@ export interface BillingKitConfig {
   customerProfileRepository?: import("../interfaces/CustomerProfileRepository").CustomerProfileRepository;
   auditLogRepository?: AuditLogRepository;
   auditActor?: AuditActor;
+  webhookEventRepository?: WebhookEventRepository;
 }

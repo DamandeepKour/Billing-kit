@@ -7,3 +7,4 @@ export type { TransactionRepository } from "./TransactionRepository";
 export type { RetryAttemptRepository } from "./RetryAttemptRepository";
 export type { CustomerProfileRepository } from "./CustomerProfileRepository";
 export type { RouteTransferProvider } from "./RouteTransferProvider";
+export type { WebhookEventRepository } from "./WebhookEventRepository";

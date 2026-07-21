@@ -30,6 +30,43 @@ export interface WebhookEvent {
   data: unknown;
   normalizedType: NormalizedWebhookType;
   entity: WebhookEntity;
+  occurredAt?: Date;
+}
+export type WebhookProcessingStatus =
+  | "processing"
+  | "processed"
+  | "failed"
+  | "ignored";
+export interface WebhookEventRecord {
+  eventId: string;
+  provider: string;
+  receivedAt: Date;
+  processedAt?: Date;
+  status: WebhookProcessingStatus;
+  eventType: string;
+  resourceType: WebhookEntityKind;
+  resourceId: string;
+  occurredAt?: Date;
+  error?: string;
+}
+export interface ClaimWebhookEventResult {
+  outcome: "claimed" | "duplicate" | "out_of_order";
+  record: WebhookEventRecord;
+}
+export interface RawWebhookRequest {
+  rawBody: string | Buffer;
+  signature: string;
+  eventId?: string;
+  receivedAt?: Date;
+}
+export type WebhookEventHandler = (
+  event: WebhookEvent,
+) => void | Promise<void>;
+export interface ProcessWebhookResult {
+  event: WebhookEvent;
+  record: WebhookEventRecord;
+  duplicate: boolean;
+  outOfOrder: boolean;
 }
 export const RAZORPAY_WEBHOOK_EVENTS = [
   "payment.captured",

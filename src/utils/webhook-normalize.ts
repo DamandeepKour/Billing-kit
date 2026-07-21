@@ -5,6 +5,7 @@ import type {
 } from "../types/webhook";
 type RazorpayWebhookBody = {
   event?: string;
+  created_at?: number;
   payload?: {
     payment?: {
       entity?: Record<string, unknown>;
@@ -78,15 +79,21 @@ export function normalizeRazorpayWebhook(body: string, provider: string): Webhoo
   const type = parsed.event ?? "unknown";
   const payload = parsed.payload ?? {};
   let entity: WebhookEntity = { id: `evt_${Date.now()}`, kind: "unknown" };
+  let source: Record<string, unknown> | undefined;
   if (payload.payment?.entity) {
+    source = payload.payment.entity;
     entity = entityFrom("payment", payload.payment.entity);
   } else if (payload.refund?.entity) {
+    source = payload.refund.entity;
     entity = entityFrom("refund", payload.refund.entity);
   } else if (payload.subscription?.entity) {
+    source = payload.subscription.entity;
     entity = entityFrom("subscription", payload.subscription.entity);
   } else if (payload.invoice?.entity) {
+    source = payload.invoice.entity;
     entity = entityFrom("invoice", payload.invoice.entity);
   }
+  const occurredAtSeconds = parsed.created_at ?? asNumber(source?.created_at);
   return {
     id: entity.id !== "unknown" ? entity.id : `evt_${Date.now()}`,
     type,
@@ -94,6 +101,10 @@ export function normalizeRazorpayWebhook(body: string, provider: string): Webhoo
     data: payload,
     normalizedType: RAZORPAY_NORMALIZED[type] ?? "unknown",
     entity,
+    occurredAt:
+      occurredAtSeconds !== undefined
+        ? new Date(occurredAtSeconds * 1000)
+        : undefined,
   };
 }
 export function normalizeStripeWebhook(
@@ -101,6 +112,7 @@ export function normalizeStripeWebhook(
   type: string,
   data: unknown,
   provider: string,
+  occurredAtSeconds?: number,
 ): WebhookEvent {
   const object =
     data && typeof data === "object" ? (data as Record<string, unknown>) : undefined;
@@ -171,5 +183,9 @@ export function normalizeStripeWebhook(
     data,
     normalizedType,
     entity,
+    occurredAt:
+      occurredAtSeconds !== undefined
+        ? new Date(occurredAtSeconds * 1000)
+        : undefined,
   };
 }
