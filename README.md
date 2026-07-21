@@ -16,7 +16,7 @@ npm install billing-kit
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
 - Coupons & promotion codes — amountOff / percentOff, duration, usage limits, checkout apply/remove
 - Customer billing profiles — reusable tax IDs, address, currency, saved payment methods
-- Marketplace routing — split payments, transfers, reversals (Razorpay Route)
+- Marketplace routing — idempotent splits, transfers, reversals, and reconciliation (Razorpay Route)
 - Audit trail — invoice, payment, refund, tax, and webhook event timelines
 - Usage billing — event recording, daily/monthly/cycle aggregation, per-unit and tiered pricing
 - Feature entitlements — plan mappings, provisioning, access checks, and lifecycle revocation
@@ -625,6 +625,7 @@ billing.calculateSplit({
 const split = await billing.splitPayment({
   paymentId: "pay_xxx",
   amount: 100000,
+  idempotencyKey: "split_order_123",
   platformCommission: { type: "percent", percent: 10 },
   transfers: [
     { linkedAccountId: "acc_vendor_a", percent: 60 },
@@ -637,13 +638,27 @@ await billing.createTransfer({
   linkedAccountId: "acc_vendor_a",
   amount: 50000,
   paymentId: "pay_xxx", // or omit for a direct transfer
+  idempotencyKey: "transfer_order_123",
 });
 
-await billing.reverseTransfer({ transferId: "trf_xxx", amount: 10000 });
+await billing.reverseTransfer({
+  transferId: "trf_xxx",
+  amount: 10000,
+  idempotencyKey: "reverse_order_123",
+});
 await billing.getSettlementDetails({ settlementId: "setl_xxx" });
+
+const request = await billing.getTransferRequest("transfer_order_123");
+const reconciled = await billing.reconcileTransferRequest(
+  "transfer_order_123",
+);
 ```
 
-Transactions record `routedAmount`, `platformFee`, `vendorAmount`, and `settlementStatus`.
+Repeated calls with the same key and payload return the persisted result without creating another transfer. Reusing a key with different input throws `IdempotencyConflictError`. Direct transfers send Razorpay Route's `X-Transfer-Idempotency` header; payment splits and reversals use the local atomic request store.
+
+Transactions record `routedAmount`, `platformFee`, `vendorAmount`, and `settlementStatus`. Transfer requests persist processing state, provider responses, transfer IDs, errors, and reconciliation status through `TransferRequestRepository`.
+
+This integration covers Razorpay Route transfers. RazorpayX payouts and `X-Payout-Idempotency` are separate APIs and are not represented by these methods.
 
 ## Tax support
 
@@ -892,6 +907,7 @@ const billing = new BillingKit({
 | `WebhookEventRepository` | `claim`, `save`, `find`, `list` | `InMemoryWebhookEventRepository` |
 | `UsageEventRepository` | `save`, `findById`, `list` | `InMemoryUsageEventRepository` |
 | `EntitlementRepository` | plan mappings, subscription grants, customer lookup | `InMemoryEntitlementRepository` |
+| `TransferRequestRepository` | `claim`, `save`, `findByKey`, `list` | `InMemoryTransferRequestRepository` |
 
 ## Audit trail
 
@@ -1029,7 +1045,7 @@ try {
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `registerCoupon`, `createPromotionCode`, `applyCoupon`, `applyPromotionCode`, `removePromotionCode`, `applyCheckoutDiscount`, `validateCoupon` |
 | Customer profile | `createCustomerProfile`, `updateCustomerProfile`, `getCustomerProfile`, `attachPaymentMethod`, `setDefaultPaymentMethod` |
-| Route / splits | `splitPayment`, `createTransfer`, `reverseTransfer`, `getSettlementDetails`, `calculateSplit` |
+| Route / splits | `splitPayment`, `createTransfer`, `reverseTransfer`, `getSettlementDetails`, `calculateSplit`, `getTransferRequest`, `listTransferRequests`, `reconcileTransferRequest` |
 | Audit | `recordBillingEvent`, `getInvoiceTimeline`, `getPaymentAuditLog`, `listAuditEvents` |
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
@@ -1067,6 +1083,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Webhook idempotency, duplicate suppression, out-of-order protection |
 | Done | Usage event aggregation, pricing, and invoice generation |
 | Done | Plan feature mapping and subscription entitlement provisioning |
+| Done | Idempotent Route transfers with persisted request reconciliation |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

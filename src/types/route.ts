@@ -30,6 +30,7 @@ export interface CreateTransferInput {
   paymentId?: string;
   onHold?: boolean;
   notes?: Record<string, string>;
+  idempotencyKey?: string;
 }
 
 export interface SplitPaymentInput {
@@ -38,6 +39,7 @@ export interface SplitPaymentInput {
   currency?: string;
   transfers: TransferRule[];
   platformCommission?: CommissionRule;
+  idempotencyKey?: string;
 }
 
 export interface TransferResult {
@@ -76,6 +78,7 @@ export interface ReverseTransferInput {
   transferId: string;
   amount?: number;
   notes?: Record<string, string>;
+  idempotencyKey?: string;
 }
 
 export interface TransferReversalResult {
@@ -106,4 +109,48 @@ export interface SettlementDetails {
   transferIds?: string[];
   provider: string;
   providerResponse?: Record<string, unknown>;
+}
+
+export type TransferRequestKind =
+  | "direct_transfer"
+  | "payment_transfer"
+  | "split_payment"
+  | "transfer_reversal";
+
+export type TransferRequestStatus =
+  | "processing"
+  | "succeeded"
+  | "failed"
+  | "uncertain";
+
+export type TransferRequestResult =
+  | TransferResult
+  | SplitPaymentResult
+  | TransferReversalResult;
+
+export interface TransferRequestRecord {
+  id: string;
+  idempotencyKey: string;
+  kind: TransferRequestKind;
+  fingerprint: string;
+  status: TransferRequestStatus;
+  request: Record<string, unknown>;
+  result?: TransferRequestResult;
+  providerTransferIds?: string[];
+  providerResponse?: Record<string, unknown>;
+  settlementStatus?: TransferSettlementStatus | string;
+  error?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  reconciledAt?: Date;
+}
+
+export interface ClaimTransferRequestResult {
+  outcome: "claimed" | "duplicate" | "conflict" | "in_flight";
+  record: TransferRequestRecord;
+}
+
+export interface TransferRequestFilter {
+  kind?: TransferRequestKind | TransferRequestKind[];
+  status?: TransferRequestStatus | TransferRequestStatus[];
 }

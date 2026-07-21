@@ -6,3 +6,4 @@ export { InMemoryCustomerProfileRepository } from "./InMemoryCustomerProfileRepo
 export { InMemoryWebhookEventRepository } from "./InMemoryWebhookEventRepository";
 export { InMemoryUsageEventRepository } from "./InMemoryUsageEventRepository";
 export { InMemoryEntitlementRepository } from "./InMemoryEntitlementRepository";
+export { InMemoryTransferRequestRepository } from "./InMemoryTransferRequestRepository";

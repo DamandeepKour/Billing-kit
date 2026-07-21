@@ -2,6 +2,10 @@ import { BillingKit } from "../src/core/BillingKit";
 import { calculateSplitAllocations, SplitValidationError } from "../src/utils/split";
 import { UnsupportedOperationError } from "../src/utils/stripe-errors";
 import { TransactionType } from "../src/types/transaction";
+import {
+  IdempotencyConflictError,
+  IdempotencyInFlightError,
+} from "../src/utils/errors";
 
 const paymentsTransfer = jest.fn();
 const transfersCreate = jest.fn();
@@ -264,6 +268,300 @@ describe("Razorpay Route splitPayment", () => {
     expect(txn.platformFee).toBe(3000);
     expect(txn.vendorAmount).toBe(7000);
     expect(txn.settlementStatus).toBe("pending");
+  });
+});
+
+describe("Idempotent Razorpay Route transfers", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("returns a cached split result for repeated calls", async () => {
+    paymentsTransfer.mockResolvedValue({
+      items: [
+        {
+          id: "trf_idem_split",
+          amount: 9000,
+          currency: "INR",
+          status: "pending",
+          recipient: "acc_vendor",
+        },
+      ],
+    });
+    const billing = razorpayBilling();
+    const input = {
+      paymentId: "pay_idem",
+      amount: 10000,
+      idempotencyKey: "split_retry_001",
+      platformCommission: { type: "flat" as const, amount: 1000 },
+      transfers: [{ linkedAccountId: "acc_vendor", amount: 9000 }],
+    };
+
+    const first = await billing.splitPayment(input);
+    const repeated = await billing.splitPayment(input);
+
+    expect(paymentsTransfer).toHaveBeenCalledTimes(1);
+    expect(repeated).toEqual(first);
+    await expect(
+      billing.getTransferRequest("split_retry_001"),
+    ).resolves.toMatchObject({
+      kind: "split_payment",
+      status: "succeeded",
+      providerTransferIds: ["trf_idem_split"],
+      providerResponse: expect.any(Object),
+    });
+  });
+
+  it("rejects reuse of a key with a different transfer payload", async () => {
+    paymentsTransfer.mockResolvedValue({
+      items: [
+        {
+          id: "trf_conflict",
+          amount: 1000,
+          currency: "INR",
+          status: "pending",
+          recipient: "acc_vendor",
+        },
+      ],
+    });
+    const billing = razorpayBilling();
+    await billing.createTransfer({
+      linkedAccountId: "acc_vendor",
+      paymentId: "pay_conflict",
+      amount: 1000,
+      idempotencyKey: "transfer_conflict_001",
+    });
+
+    await expect(
+      billing.createTransfer({
+        linkedAccountId: "acc_vendor",
+        paymentId: "pay_conflict",
+        amount: 2000,
+        idempotencyKey: "transfer_conflict_001",
+      }),
+    ).rejects.toBeInstanceOf(IdempotencyConflictError);
+    expect(paymentsTransfer).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks a concurrent request with the same key", async () => {
+    let resolveTransfer:
+      | ((value: Record<string, unknown>) => void)
+      | undefined;
+    paymentsTransfer.mockImplementation(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          resolveTransfer = resolve;
+        }),
+    );
+    const billing = razorpayBilling();
+    const input = {
+      linkedAccountId: "acc_vendor",
+      paymentId: "pay_concurrent",
+      amount: 1000,
+      idempotencyKey: "transfer_concurrent_001",
+    };
+
+    const first = billing.createTransfer(input);
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(billing.createTransfer(input)).rejects.toBeInstanceOf(
+      IdempotencyInFlightError,
+    );
+    resolveTransfer?.({
+      items: [
+        {
+          id: "trf_concurrent",
+          amount: 1000,
+          currency: "INR",
+          status: "pending",
+          recipient: "acc_vendor",
+        },
+      ],
+    });
+    await expect(first).resolves.toMatchObject({ id: "trf_concurrent" });
+    expect(paymentsTransfer).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows retrying a definitively failed transfer", async () => {
+    paymentsTransfer
+      .mockRejectedValueOnce(new Error("provider rejected request"))
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "trf_retry_success",
+            amount: 1000,
+            currency: "INR",
+            status: "pending",
+            recipient: "acc_vendor",
+          },
+        ],
+      });
+    const billing = razorpayBilling();
+    const input = {
+      linkedAccountId: "acc_vendor",
+      paymentId: "pay_retry",
+      amount: 1000,
+      idempotencyKey: "transfer_retry_001",
+    };
+
+    await expect(billing.createTransfer(input)).rejects.toThrow(
+      "provider rejected request",
+    );
+    await expect(
+      billing.getTransferRequest("transfer_retry_001"),
+    ).resolves.toMatchObject({ status: "failed" });
+
+    await expect(billing.createTransfer(input)).resolves.toMatchObject({
+      id: "trf_retry_success",
+    });
+    expect(paymentsTransfer).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends the provider idempotency header for direct transfers", async () => {
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          id: "trf_direct_idempotent",
+          amount: 2500,
+          currency: "INR",
+          status: "processed",
+          recipient: "acc_direct",
+          on_hold: false,
+        }),
+    } as Response);
+    try {
+      const billing = razorpayBilling();
+      const input = {
+        linkedAccountId: "acc_direct",
+        amount: 2500,
+        idempotencyKey: "direct_transfer_001",
+      };
+
+      const first = await billing.createTransfer(input);
+      const repeated = await billing.createTransfer(input);
+
+      expect(first.id).toBe("trf_direct_idempotent");
+      expect(repeated).toEqual(first);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://api.razorpay.com/v1/transfers",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            "X-Transfer-Idempotency": "direct_transfer_001",
+          }),
+        }),
+      );
+      expect(transfersCreate).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("reconciles an uncertain direct transfer without a new logical payout", async () => {
+    const fetchSpy = jest
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new TypeError("network connection lost"))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            id: "trf_after_timeout",
+            amount: 2500,
+            currency: "INR",
+            status: "processed",
+            recipient: "acc_direct",
+            on_hold: false,
+          }),
+      } as Response);
+    try {
+      const billing = razorpayBilling();
+      const input = {
+        linkedAccountId: "acc_direct",
+        amount: 2500,
+        idempotencyKey: "direct_timeout_001",
+      };
+
+      await expect(billing.createTransfer(input)).rejects.toThrow(
+        "network connection lost",
+      );
+      await expect(
+        billing.getTransferRequest("direct_timeout_001"),
+      ).resolves.toMatchObject({ status: "uncertain" });
+      await expect(billing.createTransfer(input)).rejects.toBeInstanceOf(
+        IdempotencyInFlightError,
+      );
+
+      const reconciled = await billing.reconcileTransferRequest(
+        "direct_timeout_001",
+      );
+      expect(reconciled).toMatchObject({
+        status: "succeeded",
+        providerTransferIds: ["trf_after_timeout"],
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("reconciles persisted provider transfer status", async () => {
+    paymentsTransfer.mockResolvedValue({
+      items: [
+        {
+          id: "trf_reconcile",
+          amount: 1000,
+          currency: "INR",
+          status: "pending",
+          recipient: "acc_vendor",
+        },
+      ],
+    });
+    transfersFetch.mockResolvedValue({
+      id: "trf_reconcile",
+      amount: 1000,
+      currency: "INR",
+      status: "processed",
+    });
+    const billing = razorpayBilling();
+    await billing.createTransfer({
+      linkedAccountId: "acc_vendor",
+      paymentId: "pay_reconcile",
+      amount: 1000,
+      idempotencyKey: "transfer_reconcile_001",
+    });
+
+    const reconciled = await billing.reconcileTransferRequest(
+      "transfer_reconcile_001",
+    );
+
+    expect(transfersFetch).toHaveBeenCalledWith("trf_reconcile");
+    expect(reconciled).toMatchObject({
+      status: "succeeded",
+      settlementStatus: "settled",
+      reconciledAt: expect.any(Date),
+    });
+  });
+
+  it("deduplicates transfer reversals", async () => {
+    transfersReverse.mockResolvedValue({
+      id: "rev_idempotent",
+      amount: 500,
+      currency: "INR",
+      status: "processed",
+    });
+    const billing = razorpayBilling();
+    const input = {
+      transferId: "trf_reverse",
+      amount: 500,
+      idempotencyKey: "reversal_retry_001",
+    };
+
+    const first = await billing.reverseTransfer(input);
+    const repeated = await billing.reverseTransfer(input);
+
+    expect(repeated).toEqual(first);
+    expect(transfersReverse).toHaveBeenCalledTimes(1);
   });
 });
 

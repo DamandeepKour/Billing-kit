@@ -102,6 +102,8 @@ import type {
   SettlementDetails,
   SplitPaymentInput,
   SplitPaymentResult,
+  TransferRequestFilter,
+  TransferRequestRecord,
   TransferReversalResult,
   TransferResult,
 } from "../types/route";
@@ -118,6 +120,7 @@ import {
   InMemoryEntitlementRepository,
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
+  InMemoryTransferRequestRepository,
   InMemoryTransactionRepository,
   InMemoryWebhookEventRepository,
   InMemoryUsageEventRepository,
@@ -180,6 +183,9 @@ export class BillingKit {
     const entitlementRepository =
       this.config.entitlementRepository ??
       new InMemoryEntitlementRepository();
+    const transferRequestRepository =
+      this.config.transferRequestRepository ??
+      new InMemoryTransferRequestRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
     this.couponService = new CouponService();
@@ -210,7 +216,11 @@ export class BillingKit {
       this.config.retry,
       this.config.retryHooks,
     );
-    this.routeService = new RouteService(gateway, this.transactionService);
+    this.routeService = new RouteService(
+      gateway,
+      this.transactionService,
+      transferRequestRepository,
+    );
     this.auditLogService = new AuditLogService(
       auditLogRepository,
       this.config.provider,
@@ -728,6 +738,24 @@ export class BillingKit {
 
   getSettlementDetails(input: GetSettlementDetailsInput): Promise<SettlementDetails> {
     return this.routeService.getSettlementDetails(input);
+  }
+
+  getTransferRequest(
+    idempotencyKey: string,
+  ): Promise<TransferRequestRecord | null> {
+    return this.routeService.getTransferRequest(idempotencyKey);
+  }
+
+  listTransferRequests(
+    filter?: TransferRequestFilter,
+  ): Promise<TransferRequestRecord[]> {
+    return this.routeService.listTransferRequests(filter);
+  }
+
+  reconcileTransferRequest(
+    idempotencyKey: string,
+  ): Promise<TransferRequestRecord | null> {
+    return this.routeService.reconcileTransferRequest(idempotencyKey);
   }
 
   openBillingAttempt(input: OpenBillingAttemptInput): Promise<BillingRetryAttempt> {

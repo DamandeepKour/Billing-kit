@@ -37,6 +37,24 @@ export class TransactionNotFoundError extends BillingKitError {
     this.name = "TransactionNotFoundError";
   }
 }
+export class IdempotencyConflictError extends BillingKitError {
+  constructor(key: string) {
+    super(
+      `Idempotency key reused with a different request: ${key}`,
+      "IDEMPOTENCY_CONFLICT",
+    );
+    this.name = "IdempotencyConflictError";
+  }
+}
+export class IdempotencyInFlightError extends BillingKitError {
+  constructor(key: string) {
+    super(
+      `Transfer request is already in progress or requires reconciliation: ${key}`,
+      "IDEMPOTENCY_IN_FLIGHT",
+    );
+    this.name = "IdempotencyInFlightError";
+  }
+}
 export class InvoiceNotFoundError extends BillingKitError {
   constructor(id: string) {
     super(`Invoice not found: ${id}`, "INVOICE_NOT_FOUND");

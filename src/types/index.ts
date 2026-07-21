@@ -108,6 +108,7 @@ export type {
 export type {
   CommissionRule,
   CommissionType,
+  ClaimTransferRequestResult,
   CreateTransferInput,
   GetSettlementDetailsInput,
   ReverseTransferInput,
@@ -118,6 +119,11 @@ export type {
   TransferReversalResult,
   TransferResult,
   TransferRule,
+  TransferRequestFilter,
+  TransferRequestKind,
+  TransferRequestRecord,
+  TransferRequestResult,
+  TransferRequestStatus,
   TransferSettlementStatus,
 } from "./route";
 export type {

@@ -34,7 +34,11 @@ import type {
   TransferResult,
   TransferSettlementStatus,
 } from "../../types/route";
-import { InvalidConfigError, WebhookVerificationError } from "../../utils/errors";
+import {
+  InvalidConfigError,
+  PaymentError,
+  WebhookVerificationError,
+} from "../../utils/errors";
 import { normalizeCurrency } from "../../utils/currency";
 import { normalizeRazorpayWebhook } from "../../utils/webhook-normalize";
 import { calculateSplitAllocations } from "../../utils/split";
@@ -325,14 +329,57 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
       return mapTransfer(first, this.name, input.paymentId);
     }
 
-    raw = await client.transfers.create({
+    const request = {
       account: input.linkedAccountId,
       amount: input.amount,
       currency,
       on_hold: input.onHold ?? false,
       notes: input.notes,
-    });
+    };
+    raw = input.idempotencyKey
+      ? await this.createIdempotentDirectTransfer(
+          request,
+          input.idempotencyKey,
+        )
+      : await client.transfers.create(request);
     return mapTransfer(raw, this.name);
+  }
+
+  private async createIdempotentDirectTransfer(
+    request: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<Record<string, unknown>> {
+    const authorization = Buffer.from(
+      `${this.config.keyId}:${this.config.secretKey}`,
+    ).toString("base64");
+    const response = await fetch("https://api.razorpay.com/v1/transfers", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${authorization}`,
+        "Content-Type": "application/json",
+        "X-Transfer-Idempotency": idempotencyKey,
+      },
+      body: JSON.stringify(request),
+    });
+    const text = await response.text();
+    let payload: unknown;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { message: text };
+    }
+    if (!response.ok) {
+      const body = payload as {
+        error?: { description?: string };
+        message?: string;
+      };
+      throw new PaymentError(
+        body.error?.description ??
+          body.message ??
+          `Razorpay transfer request failed with status ${response.status}`,
+      );
+    }
+    return payload as Record<string, unknown>;
   }
 
   async splitPayment(input: SplitPaymentInput): Promise<SplitPaymentResult> {

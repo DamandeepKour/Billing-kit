@@ -7,4 +7,5 @@ export {
   InMemoryWebhookEventRepository,
   InMemoryUsageEventRepository,
   InMemoryEntitlementRepository,
+  InMemoryTransferRequestRepository,
 } from "./in-memory";
