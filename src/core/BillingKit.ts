@@ -14,7 +14,12 @@ import type {
   CreatePromotionCodeInput,
   PromotionCode,
 } from "../types/coupon";
-import type { GenerateInvoiceInput, Invoice, InvoiceSummary } from "../types/invoice";
+import type {
+  GenerateInvoiceInput,
+  Invoice,
+  InvoiceSummary,
+  LineItem,
+} from "../types/invoice";
 import type {
   CapturePaymentInput,
   CreatePaymentInput,
@@ -57,6 +62,18 @@ import type {
   WebhookEventRecord,
 } from "../types/webhook";
 import type {
+  AggregateUsageEventsInput,
+  GenerateUsageInvoiceInput,
+  GenerateUsageInvoiceResult,
+  PricedUsage,
+  RecordUsageEventInput,
+  UsageAggregate,
+  UsageEvent,
+  UsageEventFilter,
+  UsagePrice,
+  UsageToLineItemsInput,
+} from "../types/usage";
+import type {
   BillingRetryAttempt,
   OpenBillingAttemptInput,
   ReportBillingFailureInput,
@@ -93,6 +110,7 @@ import {
   InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,
   InMemoryWebhookEventRepository,
+  InMemoryUsageEventRepository,
 } from "../repositories";
 import { RefundService } from "../refund";
 import { RetryService } from "../retry";
@@ -100,6 +118,7 @@ import { RouteService } from "../route";
 import { SubscriptionService } from "../subscription";
 import { TaxService } from "../tax";
 import { TransactionService } from "../transaction";
+import { UsageBillingService } from "../usage";
 import { InvalidConfigError } from "../utils/errors";
 import { WebhookService } from "../webhook";
 
@@ -118,6 +137,7 @@ export class BillingKit {
   private readonly customerProfileService: CustomerProfileService;
   private readonly routeService: RouteService;
   private readonly auditLogService: AuditLogService;
+  private readonly usageBillingService: UsageBillingService;
 
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
@@ -144,6 +164,8 @@ export class BillingKit {
     const webhookEventRepository =
       this.config.webhookEventRepository ??
       new InMemoryWebhookEventRepository();
+    const usageEventRepository =
+      this.config.usageEventRepository ?? new InMemoryUsageEventRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
     this.couponService = new CouponService();
@@ -180,6 +202,7 @@ export class BillingKit {
       this.config.provider,
       this.config.auditActor,
     );
+    this.usageBillingService = new UsageBillingService(usageEventRepository);
   }
 
   generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
@@ -381,6 +404,75 @@ export class BillingKit {
 
   reportUsage(input: ReportUsageInput): Promise<UsageRecord> {
     return this.subscriptionService.reportUsage(input);
+  }
+
+  recordUsageEvent(input: RecordUsageEventInput): Promise<UsageEvent> {
+    return this.withAudit(
+      () => this.usageBillingService.recordUsageEvent(input),
+      (event) => ({
+        action: "usage.recorded",
+        resourceType: "usage",
+        resourceId: event.id,
+        relatedResourceIds: [
+          event.customerId,
+          ...(event.subscriptionId ? [event.subscriptionId] : []),
+        ],
+        payload: {
+          meter: event.meter,
+          quantity: event.quantity,
+          timestamp: event.timestamp.toISOString(),
+          customerId: event.customerId,
+          subscriptionId: event.subscriptionId,
+        },
+      }),
+    );
+  }
+
+  getUsageEvent(id: string): Promise<UsageEvent | null> {
+    return this.usageBillingService.getUsageEvent(id);
+  }
+
+  listUsageEvents(filter?: UsageEventFilter): Promise<UsageEvent[]> {
+    return this.usageBillingService.listUsageEvents(filter);
+  }
+
+  aggregateUsage(
+    input: AggregateUsageEventsInput,
+  ): Promise<UsageAggregate[]> {
+    return this.usageBillingService.aggregateUsage(input);
+  }
+
+  priceUsage(
+    aggregates: UsageAggregate[],
+    prices: UsagePrice[],
+  ): PricedUsage[] {
+    return this.usageBillingService.priceUsage(aggregates, prices);
+  }
+
+  usageToInvoiceLineItems(input: UsageToLineItemsInput): LineItem[] {
+    return this.usageBillingService.usageToInvoiceLineItems(input);
+  }
+
+  async generateUsageInvoice(
+    input: GenerateUsageInvoiceInput,
+  ): Promise<GenerateUsageInvoiceResult> {
+    const {
+      usage,
+      prices,
+      descriptionPrefix,
+      ...invoiceInput
+    } = input;
+    const aggregates = await this.usageBillingService.aggregateUsage(usage);
+    const lineItems = this.usageBillingService.usageToInvoiceLineItems({
+      aggregates,
+      prices,
+      descriptionPrefix,
+    });
+    const invoice = await this.generateInvoice({
+      ...invoiceInput,
+      lineItems,
+    });
+    return { invoice, aggregates, lineItems };
   }
 
   calculateGST(input: GSTInput): TaxBreakdown {

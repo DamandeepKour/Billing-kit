@@ -138,6 +138,25 @@ export type {
 export { profileToCustomer } from "./customer-profile";
 export type { GeneratePdfInput } from "./pdf";
 export type {
+  AggregateUsageEventsInput,
+  GenerateUsageInvoiceInput,
+  GenerateUsageInvoiceResult,
+  MeteredUsagePrice,
+  PerUnitUsagePrice,
+  PricedUsage,
+  RecordUsageEventInput,
+  TieredUsagePrice,
+  UsageAggregate,
+  UsageAggregationMethod,
+  UsageAggregationPeriod,
+  UsageEvent,
+  UsageEventFilter,
+  UsagePrice,
+  UsagePriceTier,
+  UsagePricingType,
+  UsageToLineItemsInput,
+} from "./usage";
+export type {
   AuditAction,
   AuditActor,
   AuditLogEntry,

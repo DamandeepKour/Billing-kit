@@ -2,6 +2,7 @@ export { BillingKit } from "./core/BillingKit";
 export type {
   Address,
   AggregateUsage,
+  AggregateUsageEventsInput,
   ApplyCouponInput,
   ApplyPromotionCodeInput,
   AppliedPromotion,
@@ -44,6 +45,8 @@ export type {
   DiscountLineItem,
   GenerateInvoiceInput,
   GeneratePdfInput,
+  GenerateUsageInvoiceInput,
+  GenerateUsageInvoiceResult,
   GetSettlementDetailsInput,
   GSTInput,
   Invoice,
@@ -61,7 +64,9 @@ export type {
   PaymentPreferences,
   PaymentResult,
   PaymentStatus,
+  PerUnitUsagePrice,
   Plan,
+  PricedUsage,
   ProcessWebhookResult,
   PromotionCode,
   ProviderCustomer,
@@ -70,6 +75,7 @@ export type {
   RazorpayWebhookEventName,
   RecordBillingEventInput,
   RecordTransactionInput,
+  RecordUsageEventInput,
   RefundPaymentInput,
   RefundResult,
   ReportBillingFailureInput,
@@ -100,6 +106,7 @@ export type {
   TaxConfig,
   TaxLine,
   TaxType,
+  TieredUsagePrice,
   Transaction,
   TransferAllocation,
   TransferReversalResult,
@@ -108,8 +115,18 @@ export type {
   TransferSettlementStatus,
   UpdateCustomerProfileInput,
   UpdatePlanInput,
+  UsageAggregate,
+  UsageAggregationMethod,
+  UsageAggregationPeriod,
+  UsageEvent,
+  UsageEventFilter,
+  UsagePrice,
+  UsagePriceTier,
+  UsagePricingType,
   UsageRecord,
+  UsageToLineItemsInput,
   UsageType,
+  MeteredUsagePrice,
   VATInput,
   VerifyPaymentSignatureInput,
   WebhookEntity,
@@ -143,6 +160,7 @@ export type {
   StripeBillingProvider,
   TransactionRepository,
   WebhookEventRepository,
+  UsageEventRepository,
 } from "./interfaces";
 export {
   InMemoryAuditLogRepository,
@@ -151,6 +169,7 @@ export {
   InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,
   InMemoryWebhookEventRepository,
+  InMemoryUsageEventRepository,
 } from "./repositories";
 export {
   BillingKitError,
@@ -196,6 +215,7 @@ export {
 } from "./utils/split";
 export { maskSensitiveFields, summarizePayload } from "./utils/mask";
 export { RouteService } from "./route";
+export { UsageBillingError, UsageBillingService } from "./usage";
 export {
   TaxEngine,
   TaxService,

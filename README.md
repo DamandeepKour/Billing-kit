@@ -18,6 +18,7 @@ npm install billing-kit
 - Customer billing profiles — reusable tax IDs, address, currency, saved payment methods
 - Marketplace routing — split payments, transfers, reversals (Razorpay Route)
 - Audit trail — invoice, payment, refund, tax, and webhook event timelines
+- Usage billing — event recording, daily/monthly/cycle aggregation, per-unit and tiered pricing
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
 - Multi-currency — presentment vs settlement, FX metadata, fee/net reporting (`inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`)
@@ -273,6 +274,54 @@ await billing.reportUsage({
   action: "increment",
 });
 ```
+
+### Provider-agnostic usage billing
+
+Record local meter events for Stripe, Razorpay, or offline billing. This API is separate from Stripe's provider-side `reportUsage`.
+
+```typescript
+await billing.recordUsageEvent({
+  customerId: "cus_123",
+  subscriptionId: "sub_123",
+  meter: "api_calls",
+  quantity: 500,
+  timestamp: new Date(),
+});
+
+const daily = await billing.aggregateUsage({
+  customerId: "cus_123",
+  meter: "api_calls",
+  period: "day", // day | month | billing_cycle
+  from: new Date("2026-07-01T00:00:00Z"),
+  to: new Date("2026-08-01T00:00:00Z"),
+});
+
+const result = await billing.generateUsageInvoice({
+  usage: {
+    customerId: "cus_123",
+    meter: "api_calls",
+    period: "billing_cycle",
+    from: new Date("2026-07-01T00:00:00Z"),
+    to: new Date("2026-08-01T00:00:00Z"),
+  },
+  prices: [{
+    type: "tiered", // per_unit | metered | tiered
+    meter: "api_calls",
+    currency: "usd",
+    tiers: [
+      { upTo: 10000, unitAmount: 2 },
+      { upTo: "inf", unitAmount: 1 },
+    ],
+  }],
+  customer: { id: "cus_123", name: "Acme" },
+  billingAddress,
+  currency: "usd",
+});
+
+console.log(result.aggregates, result.lineItems, result.invoice.total);
+```
+
+Aggregation supports `sum`, `max`, and `last`. Billing-cycle aggregation requires explicit `from` and `to` boundaries. Amounts are in the currency's smallest unit.
 
 ### Hosted Stripe invoices
 
@@ -799,6 +848,7 @@ const billing = new BillingKit({
 | `CustomerProfileRepository` | `save`, `findById`, `findByEmail`, `list`, `delete` | `InMemoryCustomerProfileRepository` |
 | `AuditLogRepository` | `save`, `findById`, `list` | `InMemoryAuditLogRepository` |
 | `WebhookEventRepository` | `claim`, `save`, `find`, `list` | `InMemoryWebhookEventRepository` |
+| `UsageEventRepository` | `save`, `findById`, `list` | `InMemoryUsageEventRepository` |
 
 ## Audit trail
 
@@ -941,6 +991,7 @@ try {
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
 | Webhook | `verifyWebhook`, `processWebhook`, `createRawWebhookHandler`, `listWebhookEvents` |
+| Usage billing | `recordUsageEvent`, `getUsageEvent`, `listUsageEvents`, `aggregateUsage`, `priceUsage`, `usageToInvoiceLineItems`, `generateUsageInvoice` |
 
 ## Examples
 
@@ -970,13 +1021,13 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Razorpay Route payment splits, transfers, reversals |
 | Done | Unified billing audit trail with sensitive-field masking |
 | Done | Webhook idempotency, duplicate suppression, out-of-order protection |
+| Done | Usage event aggregation, pricing, and invoice generation |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |
 | Next | Subpath exports (`billing-kit/tax`, `billing-kit/invoice`) |
 | Later | Additional gateways (PayPal, Cashfree) |
 | Later | Proration helpers for mid-cycle plan changes |
-| Later | Additional usage / metered billing calculators |
 
 ## Scripts
 
