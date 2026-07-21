@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { RazorpayGateway } from "../src/payment/gateways/RazorpayGateway";
 import { BillingKit } from "../src/core/BillingKit";
 import { WebhookVerificationError } from "../src/utils/errors";
+import { generateRazorpayWebhookSignature } from "../src/testing";
 
 const secret = "test_webhook_secret";
 const keySecret = "rzp_test_secret";
@@ -16,7 +17,7 @@ function gateway(): RazorpayGateway {
 }
 
 function sign(body: string | Buffer): string {
-  return crypto.createHmac("sha256", secret).update(body).digest("hex");
+  return generateRazorpayWebhookSignature(body, secret);
 }
 
 describe("Razorpay webhook signature verification", () => {

@@ -1,5 +1,5 @@
-import crypto from "crypto";
 import { BillingKit, TransactionType, type WebhookEvent } from "../../src";
+import { generateRazorpayWebhookSignature } from "../../src/testing";
 const billing = new BillingKit({
   provider: "razorpay",
   keyId: process.env.RAZORPAY_KEY_ID!,
@@ -89,5 +89,5 @@ export async function razorpayWebhookHandler(
   }
 }
 export function signRazorpayPayload(body: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(body).digest("hex");
+  return generateRazorpayWebhookSignature(body, secret);
 }

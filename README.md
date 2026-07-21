@@ -13,6 +13,7 @@ npm install billing-kit
 - Refunds — full and partial
 - Subscriptions — plans, create, cancel, renew, pause / resume (Stripe); monthly / quarterly / yearly + metered
 - Webhooks — raw-body signature verification + normalized event types (Stripe / Razorpay)
+- Webhook testing — mock payloads, local signature helpers, localhost/staging fixtures
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
 - Coupons & promotion codes — amountOff / percentOff, duration, usage limits, checkout apply/remove
 - Customer billing profiles — reusable tax IDs, address, currency, saved payment methods
@@ -850,6 +851,63 @@ const event = billing.verifyWebhook(
 
 Example handlers: [`examples/stripe/webhooks.ts`](./examples/stripe/webhooks.ts), [`examples/razorpay/webhooks.ts`](./examples/razorpay/webhooks.ts)
 
+### Testing webhooks locally
+
+Import helpers from `billing-kit/testing` (not the main package entry). They generate mock Stripe/Razorpay payloads and signatures that pass `verifyWebhook` / `processWebhook`.
+
+```typescript
+import { BillingKit } from "billing-kit";
+import {
+  createMockRazorpayPaymentCaptured,
+  createMockStripePaymentIntentSucceeded,
+  createSignedWebhookRequest,
+  formatWebhookCurl,
+  generateRazorpayWebhookSignature,
+  generateStripeWebhookSignature,
+  webhookFixtures,
+} from "billing-kit/testing";
+
+const razorpaySecret = process.env.RAZORPAY_WEBHOOK_SECRET!;
+const mock = createMockRazorpayPaymentCaptured({ amount: 99900 });
+const signature = generateRazorpayWebhookSignature(mock.body, razorpaySecret);
+
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  webhookSecret: razorpaySecret,
+});
+
+billing.verifyWebhook(mock.body, signature);
+// → payment.captured
+
+const stripeRequest = createSignedWebhookRequest({
+  provider: "stripe",
+  payload: createMockStripePaymentIntentSucceeded(),
+  secret: process.env.STRIPE_WEBHOOK_SECRET!,
+});
+// stripeRequest.headers["stripe-signature"]
+```
+
+Reusable fixtures cover payment, refund, and subscription flows for both providers via `webhookFixtures.razorpay.*` and `webhookFixtures.stripe.*`.
+
+Print a localhost curl (signs the exact body you must POST):
+
+```bash
+npx ts-node examples/testing/webhook-local.ts razorpay payment
+npx ts-node examples/testing/webhook-local.ts stripe refund
+```
+
+Run fixture verification without a live provider:
+
+```bash
+npx ts-node examples/testing/webhook-staging.ts
+```
+
+Razorpay webhook validation requires the **raw body** HMAC (`X-Razorpay-Signature`). Checkout payment signatures (`orderId|paymentId`) are separate — use `generateRazorpayPaymentSignature` for those.
+
+Examples: [`examples/testing/`](./examples/testing/)
+
 ### Razorpay Orders + payment signature
 
 ```typescript
@@ -1061,6 +1119,7 @@ try {
 | [`examples/invoices-tax-pdf.ts`](./examples/invoices-tax-pdf.ts) | Intra/inter-state GST, VAT, numbering, PDF files |
 | [`examples/stripe/`](./examples/stripe/) | Payments, subscriptions, webhooks |
 | [`examples/razorpay/`](./examples/razorpay/) | Payments, subscriptions, webhooks |
+| [`examples/testing/`](./examples/testing/) | Localhost/staging webhook fixtures + signed curls |
 
 See [`examples/README.md`](./examples/README.md) for the full layout.
 
@@ -1084,10 +1143,11 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Usage event aggregation, pricing, and invoice generation |
 | Done | Plan feature mapping and subscription entitlement provisioning |
 | Done | Idempotent Route transfers with persisted request reconciliation |
+| Done | Webhook testing helpers (`billing-kit/testing`) and local fixtures |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |
-| Next | Subpath exports (`billing-kit/tax`, `billing-kit/invoice`) |
+| Next | Additional subpath exports (`billing-kit/tax`, `billing-kit/invoice`) |
 | Later | Additional gateways (PayPal, Cashfree) |
 | Later | Proration helpers for mid-cycle plan changes |
 
