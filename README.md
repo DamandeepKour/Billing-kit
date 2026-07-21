@@ -19,6 +19,7 @@ npm install billing-kit
 - Marketplace routing — split payments, transfers, reversals (Razorpay Route)
 - Audit trail — invoice, payment, refund, tax, and webhook event timelines
 - Usage billing — event recording, daily/monthly/cycle aggregation, per-unit and tiered pricing
+- Feature entitlements — plan mappings, provisioning, access checks, and lifecycle revocation
 - Transactions — record payment, refund, subscription, renewal, chargeback events
 - Pluggable storage — inject your own invoice / transaction repositories
 - Multi-currency — presentment vs settlement, FX metadata, fee/net reporting (`inr`, `usd`, `eur`, `gbp`, `aed`, `sgd`)
@@ -330,6 +331,47 @@ Aggregation supports `sum`, `max`, and `last`. Billing-cycle aggregation require
 const invoice = await billing.retrieveProviderInvoice("in_xxx");
 console.log(invoice.hostedInvoiceUrl); // customer-facing hosted page
 console.log(invoice.invoicePdfUrl);
+```
+
+### Plan features and entitlements
+
+Map provider plans to application features and check access without calling the provider on each request.
+
+```typescript
+await billing.setPlanFeatures({
+  planId: "price_pro",
+  features: ["exports", "sso", "audit_logs"],
+});
+
+// Or attach the mapping while creating a plan:
+const plan = await billing.createPlan({
+  name: "Pro",
+  amount: 4900,
+  currency: "usd",
+  interval: "monthly",
+  features: ["exports", "sso"],
+});
+
+const subscription = await billing.createSubscription({
+  customerId: "cus_123",
+  planId: plan.id,
+});
+
+if (await billing.hasFeature("cus_123", "sso")) {
+  // allow access
+}
+```
+
+Subscription creation, cancellation, renewal, pause/resume, retrieval, payment failures, recoveries, and idempotent webhook processing synchronize local entitlements. Access is the union of active subscriptions; revoking one subscription does not remove features granted by another.
+
+```typescript
+await billing.revokeFeatureAccess({
+  subscriptionId: subscription.id,
+  reason: "manual compliance hold",
+});
+
+const access = await billing.getCustomerFeatureAccess("cus_123");
+// access.features, access.entitlements
 ```
 
 ### Shared subscription API
@@ -849,6 +891,7 @@ const billing = new BillingKit({
 | `AuditLogRepository` | `save`, `findById`, `list` | `InMemoryAuditLogRepository` |
 | `WebhookEventRepository` | `claim`, `save`, `find`, `list` | `InMemoryWebhookEventRepository` |
 | `UsageEventRepository` | `save`, `findById`, `list` | `InMemoryUsageEventRepository` |
+| `EntitlementRepository` | plan mappings, subscription grants, customer lookup | `InMemoryEntitlementRepository` |
 
 ## Audit trail
 
@@ -992,6 +1035,7 @@ try {
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
 | Webhook | `verifyWebhook`, `processWebhook`, `createRawWebhookHandler`, `listWebhookEvents` |
 | Usage billing | `recordUsageEvent`, `getUsageEvent`, `listUsageEvents`, `aggregateUsage`, `priceUsage`, `usageToInvoiceLineItems`, `generateUsageInvoice` |
+| Entitlements | `setPlanFeatures`, `getPlanFeatures`, `hasFeature`, `listFeatures`, `getCustomerFeatureAccess`, `syncSubscriptionEntitlements`, `revokeFeatureAccess` |
 
 ## Examples
 
@@ -1022,6 +1066,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Unified billing audit trail with sensitive-field masking |
 | Done | Webhook idempotency, duplicate suppression, out-of-order protection |
 | Done | Usage event aggregation, pricing, and invoice generation |
+| Done | Plan feature mapping and subscription entitlement provisioning |
 | Next | Idempotency store interface for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |

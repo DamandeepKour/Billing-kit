@@ -5,6 +5,16 @@ export type {
   TaxConfig,
 } from "./config";
 export type {
+  CustomerEntitlement,
+  CustomerFeatureAccess,
+  EntitlementSource,
+  EntitlementStatus,
+  PlanFeatureMapping,
+  RevokeFeatureAccessInput,
+  SetPlanFeaturesInput,
+  SyncSubscriptionEntitlementsInput,
+} from "./entitlement";
+export type {
   Address,
   Customer,
   Discount,

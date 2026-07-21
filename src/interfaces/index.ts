@@ -9,3 +9,4 @@ export type { CustomerProfileRepository } from "./CustomerProfileRepository";
 export type { RouteTransferProvider } from "./RouteTransferProvider";
 export type { WebhookEventRepository } from "./WebhookEventRepository";
 export type { UsageEventRepository } from "./UsageEventRepository";
+export type { EntitlementRepository } from "./EntitlementRepository";

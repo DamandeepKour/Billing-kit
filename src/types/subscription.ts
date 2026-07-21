@@ -11,6 +11,7 @@ export interface CreatePlanInput {
   metadata?: Record<string, string>;
   usageType?: UsageType;
   aggregateUsage?: AggregateUsage;
+  features?: string[];
 }
 export interface UpdatePlanInput {
   planId: string;
@@ -28,6 +29,7 @@ export interface Plan {
   usageType?: UsageType;
   aggregateUsage?: AggregateUsage;
   productId?: string;
+  features?: string[];
 }
 export interface CreateSubscriptionInput {
   customerId: string;

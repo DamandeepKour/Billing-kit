@@ -266,6 +266,68 @@ describe("Webhook idempotency", () => {
     expect(older.record.status).toBe("ignored");
     expect(older.record.processedAt).toBeInstanceOf(Date);
   });
+
+  it("provisions and revokes features from subscription webhooks", async () => {
+    const sdk = billing();
+    await sdk.setPlanFeatures({
+      planId: "plan_webhook",
+      features: ["team_access"],
+    });
+    const activated = JSON.stringify({
+      event: "subscription.activated",
+      created_at: 1_700_000_100,
+      payload: {
+        subscription: {
+          entity: {
+            id: "sub_webhook",
+            customer_id: "cus_webhook",
+            plan_id: "plan_webhook",
+            status: "active",
+            current_end: 1_800_000_000,
+          },
+        },
+      },
+    });
+
+    await sdk.processWebhook(
+      {
+        rawBody: activated,
+        signature: sign(activated),
+        eventId: "rzp_event_activated",
+      },
+      jest.fn(),
+    );
+    await expect(
+      sdk.hasFeature("cus_webhook", "team_access"),
+    ).resolves.toBe(true);
+
+    const cancelled = JSON.stringify({
+      event: "subscription.cancelled",
+      created_at: 1_700_000_200,
+      payload: {
+        subscription: {
+          entity: {
+            id: "sub_webhook",
+            customer_id: "cus_webhook",
+            plan_id: "plan_webhook",
+            status: "cancelled",
+          },
+        },
+      },
+    });
+    await sdk.processWebhook(
+      {
+        rawBody: cancelled,
+        signature: sign(cancelled),
+        eventId: "rzp_event_cancelled",
+      },
+      jest.fn(),
+    );
+
+    await expect(
+      sdk.hasFeature("cus_webhook", "team_access"),
+    ).resolves.toBe(false);
+  });
 });
 
 describe("Razorpay payment signature", () => {

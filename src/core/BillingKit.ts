@@ -5,6 +5,14 @@ import type {
   RecordBillingEventInput,
 } from "../types/audit";
 import type {
+  CustomerEntitlement,
+  CustomerFeatureAccess,
+  PlanFeatureMapping,
+  RevokeFeatureAccessInput,
+  SetPlanFeaturesInput,
+  SyncSubscriptionEntitlementsInput,
+} from "../types/entitlement";
+import type {
   ApplyCouponInput,
   ApplyPromotionCodeInput,
   CheckoutDiscountInput,
@@ -100,12 +108,14 @@ import type {
 import { AuditLogService } from "../audit";
 import { CouponService } from "../coupon";
 import { CustomerProfileService } from "../customer";
+import { EntitlementService } from "../entitlement";
 import { InvoiceService } from "../invoice";
 import { InvoicePdfGenerator } from "../pdf";
 import { PaymentManager, PaymentService } from "../payment";
 import {
   InMemoryAuditLogRepository,
   InMemoryCustomerProfileRepository,
+  InMemoryEntitlementRepository,
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,
@@ -138,6 +148,7 @@ export class BillingKit {
   private readonly routeService: RouteService;
   private readonly auditLogService: AuditLogService;
   private readonly usageBillingService: UsageBillingService;
+  private readonly entitlementService: EntitlementService;
 
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
@@ -166,6 +177,9 @@ export class BillingKit {
       new InMemoryWebhookEventRepository();
     const usageEventRepository =
       this.config.usageEventRepository ?? new InMemoryUsageEventRepository();
+    const entitlementRepository =
+      this.config.entitlementRepository ??
+      new InMemoryEntitlementRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
     this.couponService = new CouponService();
@@ -203,6 +217,7 @@ export class BillingKit {
       this.config.auditActor,
     );
     this.usageBillingService = new UsageBillingService(usageEventRepository);
+    this.entitlementService = new EntitlementService(entitlementRepository);
   }
 
   generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
@@ -310,8 +325,15 @@ export class BillingKit {
     );
   }
 
-  createPlan(input: CreatePlanInput): Promise<Plan> {
-    return this.subscriptionService.createPlan(input);
+  async createPlan(input: CreatePlanInput): Promise<Plan> {
+    const plan = await this.subscriptionService.createPlan(input);
+    if (input.features) {
+      await this.entitlementService.setPlanFeatures({
+        planId: plan.id,
+        features: input.features,
+      });
+    }
+    return input.features ? { ...plan, features: input.features } : plan;
   }
 
   updatePlan(input: UpdatePlanInput): Promise<Plan> {
@@ -322,28 +344,110 @@ export class BillingKit {
     return this.subscriptionService.cancelPlan(planId);
   }
 
-  createSubscription(input: CreateSubscriptionInput): Promise<Subscription> {
-    return this.subscriptionService.createSubscription(input);
+  async createSubscription(
+    input: CreateSubscriptionInput,
+  ): Promise<Subscription> {
+    const subscription =
+      await this.subscriptionService.createSubscription(input);
+    await this.entitlementService.syncSubscriptionEntitlements({
+      subscription,
+      source: "subscription_create",
+    });
+    return subscription;
   }
 
-  cancelSubscription(subscriptionId: string): Promise<Subscription> {
-    return this.subscriptionService.cancelSubscription(subscriptionId);
+  async cancelSubscription(subscriptionId: string): Promise<Subscription> {
+    const subscription =
+      await this.subscriptionService.cancelSubscription(subscriptionId);
+    await this.entitlementService.syncSubscriptionEntitlements({
+      subscription,
+      source: "subscription_cancel",
+    });
+    return subscription;
   }
 
-  renewSubscription(subscriptionId: string): Promise<Subscription> {
-    return this.subscriptionService.renewSubscription(subscriptionId);
+  async renewSubscription(subscriptionId: string): Promise<Subscription> {
+    const subscription =
+      await this.subscriptionService.renewSubscription(subscriptionId);
+    await this.entitlementService.syncSubscriptionEntitlements({
+      subscription,
+      source: "subscription_renew",
+    });
+    return subscription;
   }
 
-  pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
-    return this.subscriptionService.pauseSubscription(input);
+  async pauseSubscription(
+    input: PauseSubscriptionInput,
+  ): Promise<Subscription> {
+    const subscription =
+      await this.subscriptionService.pauseSubscription(input);
+    await this.entitlementService.syncSubscriptionEntitlements({
+      subscription,
+      source: "subscription_pause",
+    });
+    return subscription;
   }
 
-  resumeSubscription(subscriptionId: string): Promise<Subscription> {
-    return this.subscriptionService.resumeSubscription(subscriptionId);
+  async resumeSubscription(subscriptionId: string): Promise<Subscription> {
+    const subscription =
+      await this.subscriptionService.resumeSubscription(subscriptionId);
+    await this.entitlementService.syncSubscriptionEntitlements({
+      subscription,
+      source: "subscription_resume",
+    });
+    return subscription;
   }
 
-  retrieveSubscription(subscriptionId: string): Promise<Subscription> {
-    return this.subscriptionService.retrieveSubscription(subscriptionId);
+  async retrieveSubscription(subscriptionId: string): Promise<Subscription> {
+    const subscription =
+      await this.subscriptionService.retrieveSubscription(subscriptionId);
+    await this.entitlementService.syncSubscriptionEntitlements({
+      subscription,
+      source: "subscription_retrieve",
+    });
+    return subscription;
+  }
+
+  setPlanFeatures(
+    input: SetPlanFeaturesInput,
+  ): Promise<PlanFeatureMapping> {
+    return this.entitlementService.setPlanFeatures(input);
+  }
+
+  getPlanFeatures(planId: string): Promise<PlanFeatureMapping | null> {
+    return this.entitlementService.getPlanFeatures(planId);
+  }
+
+  hasFeature(customerId: string, featureKey: string): Promise<boolean> {
+    return this.entitlementService.hasFeature(customerId, featureKey);
+  }
+
+  listFeatures(customerId: string): Promise<string[]> {
+    return this.entitlementService.listFeatures(customerId);
+  }
+
+  getCustomerFeatureAccess(
+    customerId: string,
+  ): Promise<CustomerFeatureAccess> {
+    return this.entitlementService.getCustomerFeatureAccess(customerId);
+  }
+
+  getSubscriptionEntitlement(
+    subscriptionId: string,
+  ): Promise<CustomerEntitlement | null> {
+    return this.entitlementService.getSubscriptionEntitlement(subscriptionId);
+  }
+
+  syncSubscriptionEntitlements(
+    input: SyncSubscriptionEntitlementsInput,
+  ): Promise<CustomerEntitlement | null> {
+    return this.entitlementService.syncSubscriptionEntitlements(input);
+  }
+
+  revokeFeatureAccess(
+    input: RevokeFeatureAccessInput,
+  ): Promise<CustomerEntitlement[]> {
+    return this.entitlementService.revokeFeatureAccess(input);
   }
 
   createCustomer(input: CreateProviderCustomerInput): Promise<ProviderCustomer> {
@@ -630,23 +734,38 @@ export class BillingKit {
     return this.withInvoiceSync(this.retryService.openAttempt(input));
   }
 
-  reportBillingFailure(input: ReportBillingFailureInput): Promise<BillingRetryAttempt> {
-    return this.withInvoiceSync(this.retryService.reportFailure(input));
+  async reportBillingFailure(
+    input: ReportBillingFailureInput,
+  ): Promise<BillingRetryAttempt> {
+    const attempt = await this.withInvoiceSync(
+      this.retryService.reportFailure(input),
+    );
+    await this.revokeForBillingAttempt(attempt);
+    return attempt;
   }
 
-  reportBillingRecovered(
+  async reportBillingRecovered(
     input: ReportBillingRecoveryInput,
   ): Promise<BillingRetryAttempt> {
-    return this.withInvoiceSync(this.retryService.reportRecovered(input));
+    const attempt = await this.withInvoiceSync(
+      this.retryService.reportRecovered(input),
+    );
+    await this.entitlementService.restoreAfterPayment(
+      attempt.customerId,
+      attempt.metadata?.subscriptionId,
+    );
+    return attempt;
   }
 
-  markBillingUncollectible(
+  async markBillingUncollectible(
     referenceId: string,
     kind?: BillingRetryAttempt["kind"],
   ): Promise<BillingRetryAttempt> {
-    return this.withInvoiceSync(
+    const attempt = await this.withInvoiceSync(
       this.retryService.markUncollectible(referenceId, kind),
     );
+    await this.revokeForBillingAttempt(attempt);
+    return attempt;
   }
 
   processDueRetries(now?: Date): Promise<BillingRetryAttempt[]> {
@@ -709,7 +828,13 @@ export class BillingKit {
     request: RawWebhookRequest,
     handler: WebhookEventHandler,
   ): Promise<ProcessWebhookResult> {
-    const result = await this.webhookService.processWebhook(request, handler);
+    const result = await this.webhookService.processWebhook(
+      request,
+      async (event) => {
+        await this.entitlementService.syncWebhookEvent(event);
+        await handler(event);
+      },
+    );
     this.queueAudit({
       action: "webhook.received",
       resourceType: "webhook",
@@ -762,6 +887,19 @@ export class BillingKit {
 
   getAuditEvent(id: string): Promise<AuditLogEntry | null> {
     return this.auditLogService.getAuditEvent(id);
+  }
+
+  private async revokeForBillingAttempt(
+    attempt: BillingRetryAttempt,
+  ): Promise<void> {
+    const subscriptionId = attempt.metadata?.subscriptionId;
+    if (!attempt.customerId && !subscriptionId) return;
+    await this.entitlementService.revokeFeatureAccess({
+      customerId: attempt.customerId,
+      subscriptionId,
+      source: "payment_failure",
+      reason: attempt.lastFailureReason ?? attempt.status,
+    });
   }
 
   private async withInvoiceSync(

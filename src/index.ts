@@ -41,6 +41,8 @@ export type {
   CreateTransferInput,
   Customer,
   CustomerBillingProfile,
+  CustomerEntitlement,
+  CustomerFeatureAccess,
   Discount,
   DiscountLineItem,
   GenerateInvoiceInput,
@@ -66,6 +68,7 @@ export type {
   PaymentStatus,
   PerUnitUsagePrice,
   Plan,
+  PlanFeatureMapping,
   PricedUsage,
   ProcessWebhookResult,
   PromotionCode,
@@ -76,6 +79,7 @@ export type {
   RecordBillingEventInput,
   RecordTransactionInput,
   RecordUsageEventInput,
+  RevokeFeatureAccessInput,
   RefundPaymentInput,
   RefundResult,
   ReportBillingFailureInput,
@@ -93,14 +97,18 @@ export type {
   SavedPaymentMethod,
   SetDefaultPaymentMethodInput,
   SetDefaultProfilePaymentMethodInput,
+  SetPlanFeaturesInput,
   SettlementDetails,
   SettlementFields,
   SettlementSummary,
   SplitPaymentInput,
   SplitPaymentResult,
   ExchangeRateMetadata,
+  EntitlementSource,
+  EntitlementStatus,
   FeeBreakdown,
   Subscription,
+  SyncSubscriptionEntitlementsInput,
   TaxBreakdown,
   TaxCalculationInput,
   TaxConfig,
@@ -145,6 +153,7 @@ export {
 } from "./types";
 export { AuditLogService } from "./audit";
 export { CouponService, resolveCouponValue } from "./coupon";
+export { EntitlementError, EntitlementService } from "./entitlement";
 export {
   CustomerProfileService,
   CustomerProfileNotFoundError,
@@ -152,6 +161,7 @@ export {
 export type {
   AuditLogRepository,
   CustomerProfileRepository,
+  EntitlementRepository,
   InvoiceRepository,
   PaymentGateway,
   RazorpayBillingProvider,
@@ -165,6 +175,7 @@ export type {
 export {
   InMemoryAuditLogRepository,
   InMemoryCustomerProfileRepository,
+  InMemoryEntitlementRepository,
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
   InMemoryTransactionRepository,

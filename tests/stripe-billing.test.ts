@@ -315,6 +315,67 @@ describe("Stripe customers and invoices", () => {
     );
     expect(record.id).toBe("mbur_1");
   });
+
+  it("provisions plan features and revokes them on cancellation", async () => {
+    const billing = stripeBilling();
+    await billing.setPlanFeatures({
+      planId: "price_monthly",
+      features: ["exports", "sso"],
+    });
+    subscriptionsCreate.mockResolvedValue(baseSubscription());
+
+    const subscription = await billing.createSubscription({
+      customerId: "cus_1",
+      planId: "price_monthly",
+    });
+
+    await expect(billing.hasFeature("cus_1", "sso")).resolves.toBe(true);
+
+    subscriptionsUpdate.mockResolvedValue(
+      baseSubscription({ cancel_at_period_end: true }),
+    );
+    await billing.cancelSubscription(subscription.id);
+
+    await expect(billing.hasFeature("cus_1", "sso")).resolves.toBe(false);
+    await expect(
+      billing.getSubscriptionEntitlement(subscription.id),
+    ).resolves.toMatchObject({
+      status: "revoked",
+      source: "subscription_cancel",
+    });
+  });
+
+  it("revokes on payment failure and restores after recovery", async () => {
+    const billing = stripeBilling();
+    await billing.setPlanFeatures({
+      planId: "price_monthly",
+      features: ["api_access"],
+    });
+    subscriptionsCreate.mockResolvedValue(baseSubscription());
+    await billing.createSubscription({
+      customerId: "cus_1",
+      planId: "price_monthly",
+    });
+
+    await billing.reportBillingFailure({
+      kind: "invoice",
+      referenceId: "in_failed",
+      customerId: "cus_1",
+      metadata: { subscriptionId: "sub_1" },
+      reason: "card declined",
+    });
+    await expect(billing.hasFeature("cus_1", "api_access")).resolves.toBe(
+      false,
+    );
+
+    await billing.reportBillingRecovered({
+      kind: "invoice",
+      referenceId: "in_failed",
+    });
+    await expect(billing.hasFeature("cus_1", "api_access")).resolves.toBe(
+      true,
+    );
+  });
 });
 
 describe("Stripe error mapping", () => {

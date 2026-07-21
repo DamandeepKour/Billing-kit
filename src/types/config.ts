@@ -4,6 +4,7 @@ import type { TransactionRepository } from "../interfaces/TransactionRepository"
 import type { RetryAttemptRepository } from "../interfaces/RetryAttemptRepository";
 import type { WebhookEventRepository } from "../interfaces/WebhookEventRepository";
 import type { UsageEventRepository } from "../interfaces/UsageEventRepository";
+import type { EntitlementRepository } from "../interfaces/EntitlementRepository";
 import type { AuditActor } from "./audit";
 import type { BillingRetryHooks, RetryPolicyConfig } from "./retry";
 
@@ -47,4 +48,5 @@ export interface BillingKitConfig {
   auditActor?: AuditActor;
   webhookEventRepository?: WebhookEventRepository;
   usageEventRepository?: UsageEventRepository;
+  entitlementRepository?: EntitlementRepository;
 }

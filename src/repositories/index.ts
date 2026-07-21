@@ -6,4 +6,5 @@ export {
   InMemoryCustomerProfileRepository,
   InMemoryWebhookEventRepository,
   InMemoryUsageEventRepository,
+  InMemoryEntitlementRepository,
 } from "./in-memory";
