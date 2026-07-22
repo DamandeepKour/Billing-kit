@@ -25,10 +25,16 @@ async function run(): Promise<void> {
     metadata: { planId: plan.id },
   });
   console.log("subscription:", subscription.id, subscription.status);
+  const paused = await billing.pauseSubscription({
+    subscriptionId: subscription.id,
+  });
+  console.log("paused:", paused.status);
+  const resumed = await billing.resumeSubscription(subscription.id);
+  console.log("resumed:", resumed.status);
+  const scheduled = await billing.scheduleCancellation(subscription.id);
+  console.log("scheduled cancelAtPeriodEnd:", scheduled.cancelAtPeriodEnd);
   const cancelled = await billing.cancelSubscription(subscription.id);
   console.log("cancelled:", cancelled.status);
-  const renewed = await billing.renewSubscription(subscription.id);
-  console.log("renewed:", renewed.id, renewed.status);
 }
 run().catch((err) => {
   console.error(err);

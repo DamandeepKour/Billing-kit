@@ -55,6 +55,12 @@ export class IdempotencyInFlightError extends BillingKitError {
     this.name = "IdempotencyInFlightError";
   }
 }
+export class SubscriptionLifecycleError extends BillingKitError {
+  constructor(message: string) {
+    super(message, "SUBSCRIPTION_LIFECYCLE");
+    this.name = "SubscriptionLifecycleError";
+  }
+}
 export class InvoiceNotFoundError extends BillingKitError {
   constructor(id: string) {
     super(`Invoice not found: ${id}`, "INVOICE_NOT_FOUND");

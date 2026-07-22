@@ -67,6 +67,8 @@ export type {
   OrderResult,
   PauseCollectionBehavior,
   PauseSubscriptionInput,
+  ResumeSubscriptionInput,
+  ScheduleCancellationInput,
   PaymentMethodResult,
   PaymentMethodType,
   PaymentPreferences,
@@ -114,6 +116,7 @@ export type {
   EntitlementStatus,
   FeeBreakdown,
   Subscription,
+  SubscriptionStatus,
   SyncSubscriptionEntitlementsInput,
   TaxBreakdown,
   TaxCalculationInput,
@@ -206,6 +209,7 @@ export {
   InvalidConfigError,
   InvoiceNotFoundError,
   PaymentError,
+  SubscriptionLifecycleError,
   TransactionNotFoundError,
   UnsupportedCurrencyError,
   WebhookVerificationError,
@@ -242,6 +246,11 @@ export {
   SplitValidationError,
 } from "./utils/split";
 export { maskSensitiveFields, summarizePayload } from "./utils/mask";
+export {
+  mapRazorpaySubscriptionStatus,
+  mapStripeSubscriptionStatus,
+  mapSubscriptionStatus,
+} from "./utils/subscription-status";
 export { RouteService } from "./route";
 export { UsageBillingError, UsageBillingService } from "./usage";
 export {

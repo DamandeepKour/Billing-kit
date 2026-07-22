@@ -1,3 +1,4 @@
+import { mapStripeSubscriptionStatus } from "../../utils/subscription-status";
 import Stripe from "stripe";
 import type { PaymentGateway } from "../../interfaces/PaymentGateway";
 import type { StripeBillingProvider } from "../../interfaces/StripeBillingProvider";
@@ -76,6 +77,7 @@ function mapSubscription(
 ): Subscription {
   const item = subscription.items.data[0];
   const priceId = planId ?? item?.price.id ?? "";
+  const paused = Boolean(subscription.pause_collection);
   return {
     id: subscription.id,
     customerId:
@@ -83,12 +85,13 @@ function mapSubscription(
         ? subscription.customer
         : subscription.customer.id,
     planId: priceId,
-    status: subscription.status,
+    status: mapStripeSubscriptionStatus(subscription.status, { paused }),
+    providerStatus: subscription.status,
     currentPeriodEnd: new Date(subscription.current_period_end * 1000),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
     provider: "stripe",
     subscriptionItemId: item?.id,
-    paused: Boolean(subscription.pause_collection),
+    paused,
   };
 }
 export class StripeGateway implements PaymentGateway, StripeBillingProvider {
@@ -294,6 +297,12 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
     });
   }
   async cancelSubscription(subscriptionId: string): Promise<Subscription> {
+    return withStripeErrors(async () => {
+      const subscription = await this.stripe.subscriptions.cancel(subscriptionId);
+      return mapSubscription(subscription);
+    });
+  }
+  async scheduleCancellation(subscriptionId: string): Promise<Subscription> {
     return withStripeErrors(async () => {
       const subscription = await this.stripe.subscriptions.update(subscriptionId, {
         cancel_at_period_end: true,

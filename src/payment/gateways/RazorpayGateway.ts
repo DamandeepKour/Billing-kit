@@ -18,6 +18,7 @@ import type {
 import type {
   CreatePlanInput,
   CreateSubscriptionInput,
+  PauseSubscriptionInput,
   Plan,
   Subscription,
   UpdatePlanInput,
@@ -37,11 +38,43 @@ import type {
 import {
   InvalidConfigError,
   PaymentError,
+  SubscriptionLifecycleError,
   WebhookVerificationError,
 } from "../../utils/errors";
 import { normalizeCurrency } from "../../utils/currency";
+import { mapRazorpaySubscriptionStatus } from "../../utils/subscription-status";
 import { normalizeRazorpayWebhook } from "../../utils/webhook-normalize";
 import { calculateSplitAllocations } from "../../utils/split";
+
+type RazorpaySubscriptionEntity = {
+  id: string;
+  status: string;
+  plan_id: string;
+  customer_id?: string;
+  current_end?: number | null;
+};
+
+function mapRazorpaySubscription(
+  subscription: RazorpaySubscriptionEntity,
+  fallbackCustomerId = "",
+): Subscription {
+  const providerStatus = subscription.status;
+  const status = mapRazorpaySubscriptionStatus(providerStatus);
+  return {
+    id: subscription.id,
+    customerId: subscription.customer_id ?? fallbackCustomerId,
+    planId: subscription.plan_id,
+    status,
+    providerStatus,
+    currentPeriodEnd: new Date(
+      (subscription.current_end ?? Date.now() / 1000) * 1000,
+    ),
+    cancelAtPeriodEnd: false,
+    provider: "razorpay",
+    paused: status === "paused",
+  };
+}
+
 function mapRazorpayStatus(status: string, captured: boolean): PaymentResult["status"] {
   if (captured) return "captured";
   if (status === "authorized") return "authorized";
@@ -239,45 +272,91 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
     if (input.customerId) {
       params.customer_id = input.customerId;
     }
-    const subscription = (await this.client.subscriptions.create(params as never)) as {
-      id: string;
-      status: string;
-      plan_id: string;
-      current_end?: number;
-    };
-    return {
-      id: subscription.id,
-      customerId: input.customerId,
-      planId: input.planId,
-      status: subscription.status,
-      currentPeriodEnd: new Date((subscription.current_end ?? Date.now() / 1000) * 1000),
-      cancelAtPeriodEnd: false,
-      provider: this.name,
-    };
+    const subscription = (await this.client.subscriptions.create(
+      params as never,
+    )) as RazorpaySubscriptionEntity;
+    return mapRazorpaySubscription(subscription, input.customerId);
   }
   async cancelSubscription(subscriptionId: string): Promise<Subscription> {
-    const subscription = await this.client.subscriptions.cancel(subscriptionId);
+    const subscription = (await this.client.subscriptions.cancel(
+      subscriptionId,
+      false,
+    )) as RazorpaySubscriptionEntity;
     return {
-      id: subscription.id,
-      customerId: "",
-      planId: subscription.plan_id,
-      status: subscription.status,
-      currentPeriodEnd: new Date((subscription.current_end ?? Date.now() / 1000) * 1000),
+      ...mapRazorpaySubscription(subscription),
+      cancelAtPeriodEnd: false,
+    };
+  }
+  async scheduleCancellation(subscriptionId: string): Promise<Subscription> {
+    const subscription = (await this.client.subscriptions.cancel(
+      subscriptionId,
+      true,
+    )) as RazorpaySubscriptionEntity;
+    return {
+      ...mapRazorpaySubscription(subscription),
       cancelAtPeriodEnd: true,
-      provider: this.name,
     };
   }
   async renewSubscription(subscriptionId: string): Promise<Subscription> {
-    const subscription = await this.client.subscriptions.fetch(subscriptionId);
+    const subscription = (await this.client.subscriptions.fetch(
+      subscriptionId,
+    )) as RazorpaySubscriptionEntity;
     return {
-      id: subscription.id,
-      customerId: "",
-      planId: subscription.plan_id,
-      status: subscription.status,
-      currentPeriodEnd: new Date((subscription.current_end ?? Date.now() / 1000) * 1000),
+      ...mapRazorpaySubscription(subscription),
       cancelAtPeriodEnd: false,
-      provider: this.name,
     };
+  }
+  async pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
+    const current = (await this.client.subscriptions.fetch(
+      input.subscriptionId,
+    )) as RazorpaySubscriptionEntity;
+    const providerStatus = current.status.toLowerCase();
+
+    if (providerStatus === "paused") {
+      return mapRazorpaySubscription(current);
+    }
+
+    // Razorpay: only active can pause; pausing authenticated cancels the subscription.
+    if (providerStatus === "authenticated") {
+      const cancelled = (await this.client.subscriptions.pause(
+        input.subscriptionId,
+        { pause_at: "now" },
+      )) as RazorpaySubscriptionEntity;
+      return mapRazorpaySubscription(cancelled);
+    }
+
+    if (providerStatus !== "active") {
+      throw new SubscriptionLifecycleError(
+        `Cannot pause Razorpay subscription in "${current.status}" state; only active subscriptions can be paused`,
+      );
+    }
+
+    const subscription = (await this.client.subscriptions.pause(
+      input.subscriptionId,
+      { pause_at: "now" },
+    )) as RazorpaySubscriptionEntity;
+    return mapRazorpaySubscription(subscription);
+  }
+  async resumeSubscription(subscriptionId: string): Promise<Subscription> {
+    const current = (await this.client.subscriptions.fetch(
+      subscriptionId,
+    )) as RazorpaySubscriptionEntity;
+    if (current.status.toLowerCase() !== "paused") {
+      throw new SubscriptionLifecycleError(
+        `Cannot resume Razorpay subscription in "${current.status}" state; only paused subscriptions can be resumed`,
+      );
+    }
+    const subscription = (await this.client.subscriptions.resume(
+      subscriptionId,
+      { resume_at: "now" },
+    )) as RazorpaySubscriptionEntity;
+    return mapRazorpaySubscription(subscription);
+  }
+  async retrieveSubscription(subscriptionId: string): Promise<Subscription> {
+    const subscription = (await this.client.subscriptions.fetch(
+      subscriptionId,
+    )) as RazorpaySubscriptionEntity;
+    return mapRazorpaySubscription(subscription);
   }
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
     if (!this.config.webhookSecret) {

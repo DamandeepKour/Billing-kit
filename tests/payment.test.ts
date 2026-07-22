@@ -39,7 +39,11 @@ function createMockGateway(): jest.Mocked<PaymentGateway> {
       provider: "mock",
     }),
     cancelSubscription: jest.fn(),
+    scheduleCancellation: jest.fn(),
     renewSubscription: jest.fn(),
+    pauseSubscription: jest.fn(),
+    resumeSubscription: jest.fn(),
+    retrieveSubscription: jest.fn(),
     verifyWebhook: jest.fn(),
   };
 }

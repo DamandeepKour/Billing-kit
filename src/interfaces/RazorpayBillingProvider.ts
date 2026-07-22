@@ -7,6 +7,7 @@ import type { PaymentResult, RefundResult } from "../types/payment";
 import type {
   CreatePlanInput,
   CreateSubscriptionInput,
+  PauseSubscriptionInput,
   Plan,
   Subscription,
 } from "../types/subscription";
@@ -21,5 +22,9 @@ export type RazorpayBillingProvider = RouteTransferProvider & {
   createPlan(input: CreatePlanInput): Promise<Plan>;
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription>;
   cancelSubscription(subscriptionId: string): Promise<Subscription>;
+  scheduleCancellation(subscriptionId: string): Promise<Subscription>;
+  pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription>;
+  resumeSubscription(subscriptionId: string): Promise<Subscription>;
+  retrieveSubscription(subscriptionId: string): Promise<Subscription>;
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent;
 };

@@ -13,6 +13,7 @@ const productsUpdate = jest.fn();
 const subscriptionsCreate = jest.fn();
 const subscriptionsUpdate = jest.fn();
 const subscriptionsRetrieve = jest.fn();
+const subscriptionsCancel = jest.fn();
 const customersCreate = jest.fn();
 const customersUpdate = jest.fn();
 const paymentMethodsAttach = jest.fn();
@@ -32,6 +33,7 @@ jest.mock("stripe", () => {
           create: subscriptionsCreate,
           update: subscriptionsUpdate,
           retrieve: subscriptionsRetrieve,
+          cancel: subscriptionsCancel,
         },
         customers: { create: customersCreate, update: customersUpdate },
         paymentMethods: { attach: paymentMethodsAttach },
@@ -179,10 +181,10 @@ describe("Stripe recurring plans", () => {
 describe("Stripe subscriptions", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("creates and cancels a subscription", async () => {
+  it("creates and immediately cancels a subscription", async () => {
     subscriptionsCreate.mockResolvedValue(baseSubscription());
-    subscriptionsUpdate.mockResolvedValue(
-      baseSubscription({ cancel_at_period_end: true }),
+    subscriptionsCancel.mockResolvedValue(
+      baseSubscription({ status: "canceled", cancel_at_period_end: false }),
     );
 
     const billing = stripeBilling();
@@ -194,13 +196,27 @@ describe("Stripe subscriptions", () => {
 
     expect(created.id).toBe("sub_1");
     expect(created.subscriptionItemId).toBe("si_1");
+    expect(created.status).toBe("active");
     expect(created.cancelAtPeriodEnd).toBe(false);
 
     const cancelled = await billing.cancelSubscription("sub_1");
+    expect(subscriptionsCancel).toHaveBeenCalledWith("sub_1");
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.providerStatus).toBe("canceled");
+    expect(cancelled.cancelAtPeriodEnd).toBe(false);
+  });
+
+  it("schedules cancellation at period end", async () => {
+    subscriptionsUpdate.mockResolvedValue(
+      baseSubscription({ cancel_at_period_end: true }),
+    );
+
+    const scheduled = await stripeBilling().scheduleCancellation("sub_1");
     expect(subscriptionsUpdate).toHaveBeenCalledWith("sub_1", {
       cancel_at_period_end: true,
     });
-    expect(cancelled.cancelAtPeriodEnd).toBe(true);
+    expect(scheduled.cancelAtPeriodEnd).toBe(true);
+    expect(scheduled.status).toBe("active");
   });
 
   it("pauses, resumes, and retrieves a subscription", async () => {
@@ -217,16 +233,70 @@ describe("Stripe subscriptions", () => {
 
     const paused = await billing.pauseSubscription({ subscriptionId: "sub_1" });
     expect(paused.paused).toBe(true);
+    expect(paused.status).toBe("paused");
     expect(subscriptionsUpdate).toHaveBeenCalledWith("sub_1", {
       pause_collection: { behavior: "mark_uncollectible" },
     });
 
     const resumed = await billing.resumeSubscription("sub_1");
     expect(resumed.paused).toBe(false);
+    expect(resumed.status).toBe("active");
 
     const retrieved = await billing.retrieveSubscription("sub_1");
     expect(retrieved.id).toBe("sub_1");
     expect(subscriptionsRetrieve).toHaveBeenCalledWith("sub_1");
+  });
+
+  it("pauses with custom behavior and resumesAt", async () => {
+    const resumesAt = new Date("2030-01-15T00:00:00.000Z");
+    subscriptionsUpdate.mockResolvedValue(
+      baseSubscription({
+        pause_collection: {
+          behavior: "void",
+          resumes_at: Math.floor(resumesAt.getTime() / 1000),
+        },
+      }),
+    );
+
+    const paused = await stripeBilling().pauseSubscription({
+      subscriptionId: "sub_1",
+      behavior: "void",
+      resumesAt,
+    });
+
+    expect(paused.status).toBe("paused");
+    expect(subscriptionsUpdate).toHaveBeenCalledWith("sub_1", {
+      pause_collection: {
+        behavior: "void",
+        resumes_at: Math.floor(resumesAt.getTime() / 1000),
+      },
+    });
+  });
+
+  it("maps past_due provider status to canonical past_due", async () => {
+    subscriptionsRetrieve.mockResolvedValue(
+      baseSubscription({ status: "past_due" }),
+    );
+    const retrieved = await stripeBilling().retrieveSubscription("sub_1");
+    expect(retrieved.status).toBe("past_due");
+    expect(retrieved.providerStatus).toBe("past_due");
+  });
+
+  it("can pause while cancellation is already scheduled", async () => {
+    subscriptionsUpdate.mockResolvedValue(
+      baseSubscription({
+        cancel_at_period_end: true,
+        pause_collection: { behavior: "keep_as_draft" },
+      }),
+    );
+
+    const paused = await stripeBilling().pauseSubscription({
+      subscriptionId: "sub_1",
+      behavior: "keep_as_draft",
+    });
+
+    expect(paused.status).toBe("paused");
+    expect(paused.cancelAtPeriodEnd).toBe(true);
   });
 });
 
@@ -331,8 +401,8 @@ describe("Stripe customers and invoices", () => {
 
     await expect(billing.hasFeature("cus_1", "sso")).resolves.toBe(true);
 
-    subscriptionsUpdate.mockResolvedValue(
-      baseSubscription({ cancel_at_period_end: true }),
+    subscriptionsCancel.mockResolvedValue(
+      baseSubscription({ status: "canceled" }),
     );
     await billing.cancelSubscription(subscription.id);
 
@@ -416,15 +486,15 @@ describe("Stripe error mapping", () => {
 });
 
 describe("Stripe helpers on other providers", () => {
-  it("throws UnsupportedOperationError for Razorpay", async () => {
+  it("throws UnsupportedOperationError for Razorpay Stripe-only helpers", async () => {
     const billing = new BillingKit({
       provider: "razorpay",
       keyId: "rzp_test",
       secretKey: "secret",
     });
 
-    await expect(billing.pauseSubscription({ subscriptionId: "sub_1" })).rejects.toBeInstanceOf(
-      UnsupportedOperationError,
-    );
+    await expect(
+      billing.createCustomer({ email: "a@b.com" }),
+    ).rejects.toBeInstanceOf(UnsupportedOperationError);
   });
 });

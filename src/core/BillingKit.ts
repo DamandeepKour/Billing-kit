@@ -55,6 +55,7 @@ import type {
   PauseSubscriptionInput,
   Plan,
   ReportUsageInput,
+  ScheduleCancellationInput,
   Subscription,
   UpdatePlanInput,
   UsageRecord,
@@ -380,6 +381,18 @@ export class BillingKit {
   async cancelSubscription(subscriptionId: string): Promise<Subscription> {
     const subscription =
       await this.subscriptionService.cancelSubscription(subscriptionId);
+    await this.entitlementService.syncSubscriptionEntitlements({
+      subscription,
+      source: "subscription_cancel",
+    });
+    return subscription;
+  }
+
+  async scheduleCancellation(
+    input: ScheduleCancellationInput | string,
+  ): Promise<Subscription> {
+    const subscription =
+      await this.subscriptionService.scheduleCancellation(input);
     await this.entitlementService.syncSubscriptionEntitlements({
       subscription,
       source: "subscription_cancel",

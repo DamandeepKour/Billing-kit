@@ -15,6 +15,7 @@ import type {
   PauseSubscriptionInput,
   Plan,
   ReportUsageInput,
+  ScheduleCancellationInput,
   Subscription,
   UpdatePlanInput,
   UsageRecord,
@@ -122,6 +123,14 @@ export class SubscriptionService {
     return this.gateway.cancelSubscription(subscriptionId);
   }
 
+  scheduleCancellation(
+    input: ScheduleCancellationInput | string,
+  ): Promise<Subscription> {
+    const subscriptionId =
+      typeof input === "string" ? input : input.subscriptionId;
+    return this.gateway.scheduleCancellation(subscriptionId);
+  }
+
   renewSubscription(subscriptionId: string): Promise<Subscription> {
     return this.gateway.renewSubscription(subscriptionId);
   }
@@ -133,16 +142,16 @@ export class SubscriptionService {
     return this.gateway;
   }
 
-  async pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
-    return this.requireStripe().pauseSubscription(input);
+  pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
+    return this.gateway.pauseSubscription(input);
   }
 
-  async resumeSubscription(subscriptionId: string): Promise<Subscription> {
-    return this.requireStripe().resumeSubscription(subscriptionId);
+  resumeSubscription(subscriptionId: string): Promise<Subscription> {
+    return this.gateway.resumeSubscription(subscriptionId);
   }
 
-  async retrieveSubscription(subscriptionId: string): Promise<Subscription> {
-    return this.requireStripe().retrieveSubscription(subscriptionId);
+  retrieveSubscription(subscriptionId: string): Promise<Subscription> {
+    return this.gateway.retrieveSubscription(subscriptionId);
   }
 
   async createCustomer(input: CreateProviderCustomerInput): Promise<ProviderCustomer> {

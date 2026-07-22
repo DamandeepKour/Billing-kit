@@ -1,4 +1,5 @@
 import { BillingKit } from "../src/core/BillingKit";
+import { SubscriptionLifecycleError } from "../src/utils/errors";
 import { UnsupportedOperationError } from "../src/utils/stripe-errors";
 
 const ordersCreate = jest.fn();
@@ -6,6 +7,9 @@ const paymentsFetch = jest.fn();
 const refundsFetch = jest.fn();
 const subscriptionsCreate = jest.fn();
 const subscriptionsCancel = jest.fn();
+const subscriptionsFetch = jest.fn();
+const subscriptionsPause = jest.fn();
+const subscriptionsResume = jest.fn();
 
 jest.mock("razorpay", () => {
   return jest.fn().mockImplementation(() => ({
@@ -20,7 +24,9 @@ jest.mock("razorpay", () => {
     subscriptions: {
       create: subscriptionsCreate,
       cancel: subscriptionsCancel,
-      fetch: jest.fn(),
+      fetch: subscriptionsFetch,
+      pause: subscriptionsPause,
+      resume: subscriptionsResume,
     },
   }));
 });
@@ -111,7 +117,7 @@ describe("Razorpay orders and fetch helpers", () => {
     });
   });
 
-  it("creates and cancels a subscription", async () => {
+  it("creates and immediately cancels a subscription", async () => {
     subscriptionsCreate.mockResolvedValue({
       id: "sub_1",
       status: "created",
@@ -139,9 +145,132 @@ describe("Razorpay orders and fetch helpers", () => {
       }),
     );
     expect(sub.id).toBe("sub_1");
+    expect(sub.status).toBe("pending");
+    expect(sub.providerStatus).toBe("created");
 
     const cancelled = await billing.cancelSubscription("sub_1");
-    expect(cancelled.cancelAtPeriodEnd).toBe(true);
+    expect(subscriptionsCancel).toHaveBeenCalledWith("sub_1", false);
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.cancelAtPeriodEnd).toBe(false);
+  });
+
+  it("schedules cancellation at cycle end", async () => {
+    subscriptionsCancel.mockResolvedValue({
+      id: "sub_1",
+      status: "active",
+      plan_id: "plan_1",
+      current_end: 1_900_000_000,
+    });
+
+    const scheduled = await razorpayBilling().scheduleCancellation("sub_1");
+    expect(subscriptionsCancel).toHaveBeenCalledWith("sub_1", true);
+    expect(scheduled.cancelAtPeriodEnd).toBe(true);
+    expect(scheduled.status).toBe("active");
+  });
+
+  it("pauses and resumes an active subscription", async () => {
+    subscriptionsFetch
+      .mockResolvedValueOnce({
+        id: "sub_1",
+        status: "active",
+        plan_id: "plan_1",
+        current_end: 1_900_000_000,
+      })
+      .mockResolvedValueOnce({
+        id: "sub_1",
+        status: "paused",
+        plan_id: "plan_1",
+        current_end: 1_900_000_000,
+      });
+    subscriptionsPause.mockResolvedValue({
+      id: "sub_1",
+      status: "paused",
+      plan_id: "plan_1",
+      current_end: 1_900_000_000,
+    });
+    subscriptionsResume.mockResolvedValue({
+      id: "sub_1",
+      status: "active",
+      plan_id: "plan_1",
+      current_end: 1_900_000_000,
+    });
+
+    const billing = razorpayBilling();
+    const paused = await billing.pauseSubscription({ subscriptionId: "sub_1" });
+    expect(subscriptionsPause).toHaveBeenCalledWith("sub_1", { pause_at: "now" });
+    expect(paused.status).toBe("paused");
+    expect(paused.paused).toBe(true);
+
+    const resumed = await billing.resumeSubscription("sub_1");
+    expect(subscriptionsResume).toHaveBeenCalledWith("sub_1", {
+      resume_at: "now",
+    });
+    expect(resumed.status).toBe("active");
+    expect(resumed.paused).toBe(false);
+  });
+
+  it("rejects pause when subscription is not active", async () => {
+    subscriptionsFetch.mockResolvedValue({
+      id: "sub_1",
+      status: "created",
+      plan_id: "plan_1",
+      current_end: 1_900_000_000,
+    });
+
+    await expect(
+      razorpayBilling().pauseSubscription({ subscriptionId: "sub_1" }),
+    ).rejects.toBeInstanceOf(SubscriptionLifecycleError);
+    expect(subscriptionsPause).not.toHaveBeenCalled();
+  });
+
+  it("rejects resume when subscription is not paused", async () => {
+    subscriptionsFetch.mockResolvedValue({
+      id: "sub_1",
+      status: "active",
+      plan_id: "plan_1",
+      current_end: 1_900_000_000,
+    });
+
+    await expect(
+      razorpayBilling().resumeSubscription("sub_1"),
+    ).rejects.toBeInstanceOf(SubscriptionLifecycleError);
+    expect(subscriptionsResume).not.toHaveBeenCalled();
+  });
+
+  it("surfaces cancelled status when pausing an authenticated subscription", async () => {
+    subscriptionsFetch.mockResolvedValue({
+      id: "sub_1",
+      status: "authenticated",
+      plan_id: "plan_1",
+      current_end: 1_900_000_000,
+    });
+    subscriptionsPause.mockResolvedValue({
+      id: "sub_1",
+      status: "cancelled",
+      plan_id: "plan_1",
+      current_end: 1_900_000_000,
+    });
+
+    const result = await razorpayBilling().pauseSubscription({
+      subscriptionId: "sub_1",
+    });
+    expect(result.status).toBe("cancelled");
+    expect(result.providerStatus).toBe("cancelled");
+  });
+
+  it("is idempotent when pausing an already paused subscription", async () => {
+    subscriptionsFetch.mockResolvedValue({
+      id: "sub_1",
+      status: "paused",
+      plan_id: "plan_1",
+      current_end: 1_900_000_000,
+    });
+
+    const result = await razorpayBilling().pauseSubscription({
+      subscriptionId: "sub_1",
+    });
+    expect(result.status).toBe("paused");
+    expect(subscriptionsPause).not.toHaveBeenCalled();
   });
 });
 

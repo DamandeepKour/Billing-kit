@@ -8,6 +8,7 @@ import type {
   SetPlanFeaturesInput,
   SyncSubscriptionEntitlementsInput,
 } from "../types/entitlement";
+import { mapSubscriptionStatus } from "../utils/subscription-status";
 import type { Subscription } from "../types/subscription";
 import type { WebhookEvent } from "../types/webhook";
 import { BillingKitError } from "../utils/errors";
@@ -241,7 +242,12 @@ export class EntitlementService {
             id: subscriptionId,
             customerId,
             planId,
-            status: event.entity.status ?? "active",
+            status: mapSubscriptionStatus(
+              event.provider,
+              event.entity.status ?? "active",
+              { paused: false },
+            ),
+            providerStatus: event.entity.status ?? "active",
             currentPeriodEnd:
               currentPeriodEndSeconds !== undefined
                 ? new Date(currentPeriodEndSeconds * 1000)
@@ -279,7 +285,13 @@ export class EntitlementService {
         id: subscriptionId,
         customerId: resolvedCustomerId,
         planId,
-        status: event.entity.status ?? stringValue(raw?.status) ?? "active",
+        providerStatus:
+          event.entity.status ?? stringValue(raw?.status) ?? "active",
+        status: mapSubscriptionStatus(
+          event.provider,
+          event.entity.status ?? stringValue(raw?.status) ?? "active",
+          { paused: Boolean(raw?.pause_collection) },
+        ),
         currentPeriodEnd:
           currentPeriodEndSeconds !== undefined
             ? new Date(currentPeriodEndSeconds * 1000)
@@ -294,26 +306,29 @@ export class EntitlementService {
 }
 
 function entitlementStatus(subscription: Subscription): EntitlementStatus {
-  const status = subscription.status.toLowerCase();
-  if (subscription.paused || status === "paused") return "paused";
+  const canonical =
+    subscription.status === "active" ||
+    subscription.status === "paused" ||
+    subscription.status === "cancelled" ||
+    subscription.status === "past_due" ||
+    subscription.status === "pending"
+      ? subscription.status
+      : mapSubscriptionStatus(
+          subscription.provider,
+          subscription.providerStatus ?? subscription.status,
+          { paused: subscription.paused },
+        );
+
+  if (subscription.paused || canonical === "paused") return "paused";
   if (
     subscription.cancelAtPeriodEnd ||
-    [
-      "canceled",
-      "cancelled",
-      "completed",
-      "expired",
-      "halted",
-      "unpaid",
-      "past_due",
-      "incomplete_expired",
-    ].includes(status)
+    canonical === "cancelled" ||
+    canonical === "past_due" ||
+    canonical === "pending"
   ) {
     return "revoked";
   }
-  if (["active", "trialing", "authenticated"].includes(status)) {
-    return "active";
-  }
+  if (canonical === "active") return "active";
   return "revoked";
 }
 

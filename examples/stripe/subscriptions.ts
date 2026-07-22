@@ -53,13 +53,15 @@ async function run(): Promise<void> {
     subscriptionId: subscription.id,
     behavior: "mark_uncollectible",
   });
-  console.log("paused:", paused.paused);
+  console.log("paused:", paused.paused, paused.status);
   const resumed = await billing.resumeSubscription(subscription.id);
-  console.log("resumed paused:", resumed.paused);
+  console.log("resumed:", resumed.status, "paused:", resumed.paused);
   if (subscription.subscriptionItemId && metered.usageType === "metered") {
   }
+  const scheduled = await billing.scheduleCancellation(subscription.id);
+  console.log("scheduled cancelAtPeriodEnd:", scheduled.cancelAtPeriodEnd);
   const cancelled = await billing.cancelSubscription(subscription.id);
-  console.log("cancelAtPeriodEnd:", cancelled.cancelAtPeriodEnd);
+  console.log("cancelled:", cancelled.status);
   if (process.env.STRIPE_INVOICE_ID) {
     const invoice = await billing.retrieveProviderInvoice(process.env.STRIPE_INVOICE_ID);
     console.log("hosted invoice:", invoice.hostedInvoiceUrl);

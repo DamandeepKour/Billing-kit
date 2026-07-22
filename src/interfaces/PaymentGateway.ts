@@ -8,6 +8,7 @@ import type {
 import type {
   CreatePlanInput,
   CreateSubscriptionInput,
+  PauseSubscriptionInput,
   Plan,
   Subscription,
   UpdatePlanInput,
@@ -25,6 +26,10 @@ export interface PaymentGateway {
   cancelPlan(planId: string): Promise<Plan>;
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription>;
   cancelSubscription(subscriptionId: string): Promise<Subscription>;
+  scheduleCancellation(subscriptionId: string): Promise<Subscription>;
   renewSubscription(subscriptionId: string): Promise<Subscription>;
+  pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription>;
+  resumeSubscription(subscriptionId: string): Promise<Subscription>;
+  retrieveSubscription(subscriptionId: string): Promise<Subscription>;
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent;
 }

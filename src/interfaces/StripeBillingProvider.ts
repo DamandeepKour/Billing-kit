@@ -19,6 +19,7 @@ export interface StripeBillingProvider {
   createPlan(input: CreatePlanInput): Promise<Plan>;
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription>;
   cancelSubscription(subscriptionId: string): Promise<Subscription>;
+  scheduleCancellation(subscriptionId: string): Promise<Subscription>;
   renewSubscription(subscriptionId: string): Promise<Subscription>;
   pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription>;
   resumeSubscription(subscriptionId: string): Promise<Subscription>;

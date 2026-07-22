@@ -11,7 +11,7 @@ npm install billing-kit
 - Invoice generation with line items, discounts, tax, and PDF export
 - Payments — create, capture, cancel, status
 - Refunds — full and partial
-- Subscriptions — plans, create, cancel, renew, pause / resume (Stripe); monthly / quarterly / yearly + metered
+- Subscriptions — plans, create, pause / resume, cancel, scheduleCancellation, renew; lifecycle states for Stripe + Razorpay
 - Webhooks — raw-body signature verification + normalized event types (Stripe / Razorpay)
 - Webhook testing — mock payloads, local signature helpers, localhost/staging fixtures
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
@@ -249,8 +249,9 @@ const subscription = await billing.createSubscription({
 await billing.retrieveSubscription(subscription.id);
 await billing.pauseSubscription({ subscriptionId: subscription.id });
 await billing.resumeSubscription(subscription.id);
-await billing.cancelSubscription(subscription.id); // cancel at period end
-await billing.renewSubscription(subscription.id);  // clear cancel-at-period-end
+await billing.scheduleCancellation(subscription.id); // cancel at period end
+await billing.renewSubscription(subscription.id);    // clear cancel-at-period-end
+await billing.cancelSubscription(subscription.id);   // cancel immediately
 ```
 
 ### Metered / usage-based billing (Stripe)
@@ -393,28 +394,34 @@ const subscription = await billing.createSubscription({
   trialDays: 14,
 });
 
-// Cancel at period end
-const cancelled = await billing.cancelSubscription(subscription.id);
-// cancelled.cancelAtPeriodEnd === true
+// Cancel at period / cycle end
+const scheduled = await billing.scheduleCancellation(subscription.id);
+// scheduled.cancelAtPeriodEnd === true
 
-// Resume billing (clear cancel-at-period-end)
+// Clear a scheduled cancellation
 const renewed = await billing.renewSubscription(subscription.id);
 // renewed.cancelAtPeriodEnd === false
+
+// Or cancel immediately
+const cancelled = await billing.cancelSubscription(subscription.id);
 ```
 
 | Method | Behavior |
 |--------|----------|
 | `createPlan` | Creates a recurring price/plan (`usageType: "metered"` for usage billing on Stripe) |
 | `createSubscription` | Starts billing for a customer on that plan |
-| `cancelSubscription` | Schedules cancel at period end |
-| `renewSubscription` | Clears cancel-at-period-end so billing continues |
-| `pauseSubscription` | Stripe only — pause collection |
-| `resumeSubscription` | Stripe only — resume collection |
-| `retrieveSubscription` | Stripe only — fetch subscription |
+| `pauseSubscription` | Pause billing (Stripe `pause_collection`; Razorpay pause — active only) |
+| `resumeSubscription` | Resume a paused subscription |
+| `scheduleCancellation` | Cancel at period / cycle end |
+| `cancelSubscription` | Cancel immediately |
+| `renewSubscription` | Clears a scheduled cancellation so billing continues |
+| `retrieveSubscription` | Fetch current subscription + canonical status |
 | `createCustomer` | Stripe only — create Customer |
 | `attachPaymentMethod` / `setDefaultPaymentMethod` | Stripe only |
 | `retrieveProviderInvoice` | Stripe only — hosted invoice URL + PDF |
 | `reportUsage` | Stripe only — metered usage records |
+
+Subscription results expose a canonical `status` (`active` | `paused` | `cancelled` | `past_due` | `pending`) plus optional `providerStatus` for the raw Stripe/Razorpay value. Razorpay only allows pause from `active` (pausing `authenticated` cancels); resume is only allowed from `paused`.
 
 Full flow: [`examples/stripe/subscriptions.ts`](./examples/stripe/subscriptions.ts), [`examples/razorpay/subscriptions.ts`](./examples/razorpay/subscriptions.ts)
 
@@ -1133,8 +1140,8 @@ try {
 | Razorpay | `createOrder`, `verifyPaymentSignature`, `fetchPayment`, `fetchRefund` |
 | Refund | `refundPayment` |
 | Idempotency | `getIdempotencyRequest`, `listIdempotencyRequests` |
-| Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `cancelSubscription`, `renewSubscription` |
-| Stripe billing | `pauseSubscription`, `resumeSubscription`, `retrieveSubscription`, `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
+| Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `pauseSubscription`, `resumeSubscription`, `scheduleCancellation`, `cancelSubscription`, `renewSubscription`, `retrieveSubscription` |
+| Stripe billing | `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `registerCoupon`, `createPromotionCode`, `applyCoupon`, `applyPromotionCode`, `removePromotionCode`, `applyCheckoutDiscount`, `validateCoupon` |
 | Customer profile | `createCustomerProfile`, `updateCustomerProfile`, `getCustomerProfile`, `attachPaymentMethod`, `setDefaultPaymentMethod` |
