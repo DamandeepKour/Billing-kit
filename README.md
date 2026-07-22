@@ -1139,34 +1139,53 @@ States: `pending` → `failed` → `retrying` → `recovered` | `uncollectible`.
 
 ## Error handling
 
-All SDK errors extend `BillingKitError` and expose a `code` string.
+All SDK errors extend `BillingKitError` with a stable `code`. Provider failures also carry optional `requestId`, `providerCode`, `provider`, and `statusCode` for support and logging.
+
+Normalized classes (Stripe + Razorpay map into these):
+
+| Error | When |
+|-------|------|
+| `BillingAuthError` | Invalid keys / permissions (`StripeAuthenticationError` subclasses this) |
+| `BillingValidationError` | Bad parameters (`StripeInvalidRequestError`, `StripeCardError` subclass this) |
+| `BillingRetryableError` | Rate limits, connection failures, 5xx — safe to retry with backoff |
 
 ```typescript
 import {
+  BillingAuthError,
   BillingKitError,
-  InvalidConfigError,
+  BillingRetryableError,
+  BillingValidationError,
   InvoiceNotFoundError,
-  TransactionNotFoundError,
-  WebhookVerificationError,
-  CouponError,
-  PaymentError,
-  CurrencyMismatchError,
-  UnsupportedCurrencyError,
+  withBackoffRetry,
 } from "billing-kit";
 
 try {
-  await billing.getInvoiceSummary(id);
+  await withBackoffRetry(() => billing.createPayment({ amount: 5000 }), {
+    maxRetries: 3,
+    initialDelayMs: 100,
+  });
 } catch (err) {
-  if (err instanceof InvoiceNotFoundError) {
+  if (err instanceof BillingValidationError) {
+    // fix input — do not retry
+  } else if (err instanceof BillingAuthError) {
+    // check API keys
+  } else if (err instanceof BillingRetryableError) {
+    console.error(err.requestId, err.providerCode, err.retryAfterMs);
+  } else if (err instanceof InvoiceNotFoundError) {
     // 404
   } else if (err instanceof BillingKitError) {
-    console.error(err.code, err.message);
+    console.error(err.code, err.message, err.requestId);
   }
 }
 ```
 
+`withBackoffRetry` uses exponential backoff (+ jitter) and only retries `BillingRetryableError` / network failures by default — not validation, auth, or card declines. Prefer pairing retries with idempotency keys on mutating calls.
+
 | Error | Code |
 |-------|------|
+| `BillingAuthError` | `BILLING_AUTH_ERROR` |
+| `BillingValidationError` | `BILLING_VALIDATION_ERROR` |
+| `BillingRetryableError` | `BILLING_RETRYABLE_ERROR` |
 | `InvalidConfigError` | `INVALID_CONFIG` |
 | `PaymentError` | `PAYMENT_ERROR` |
 | `StripeCardError` | `STRIPE_CARD_ERROR` |

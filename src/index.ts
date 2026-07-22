@@ -212,7 +212,10 @@ export {
   InMemoryUsageEventRepository,
 } from "./repositories";
 export {
+  BillingAuthError,
   BillingKitError,
+  BillingRetryableError,
+  BillingValidationError,
   CouponError,
   CurrencyMismatchError,
   IdempotencyConflictError,
@@ -225,6 +228,7 @@ export {
   UnsupportedCurrencyError,
   WebhookVerificationError,
 } from "./utils/errors";
+export type { BillingErrorContext } from "./utils/errors";
 export {
   InvalidRetryStateError,
   RetryAttemptNotFoundError,
@@ -236,7 +240,15 @@ export {
   StripeInvalidRequestError,
   UnsupportedOperationError,
   mapStripeError,
+  withStripeErrors,
 } from "./utils/stripe-errors";
+export { mapRazorpayError, withRazorpayErrors } from "./utils/razorpay-errors";
+export {
+  computeBackoffDelayMs,
+  isRetryableBillingError,
+  withBackoffRetry,
+} from "./utils/retry-backoff";
+export type { BackoffRetryOptions } from "./utils/retry-backoff";
 export {
   SUPPORTED_CURRENCIES,
   assertSupportedCurrency,

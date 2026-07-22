@@ -37,10 +37,13 @@ import type {
 } from "../../types/route";
 import {
   InvalidConfigError,
-  PaymentError,
   SubscriptionLifecycleError,
   WebhookVerificationError,
 } from "../../utils/errors";
+import {
+  mapRazorpayError,
+  withRazorpayErrors,
+} from "../../utils/razorpay-errors";
 import { normalizeCurrency } from "../../utils/currency";
 import { mapRazorpaySubscriptionStatus } from "../../utils/subscription-status";
 import { normalizeRazorpayWebhook } from "../../utils/webhook-normalize";
@@ -125,15 +128,22 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
     });
     this.currency = normalizeCurrency(config.currency);
   }
+
+  private run<T>(fn: () => Promise<T>): Promise<T> {
+    return withRazorpayErrors(fn);
+  }
+
   async createOrder(input: CreateOrderInput): Promise<OrderResult> {
-    const order = await this.client.orders.create({
-      amount: input.amount,
-      currency: (input.currency ?? this.currency).toUpperCase(),
-      receipt: input.receipt ?? `rcpt_${Date.now()}`,
-      notes: input.notes,
-      partial_payment: input.partialPayment,
+    return this.run(async () => {
+      const order = await this.client.orders.create({
+        amount: input.amount,
+        currency: (input.currency ?? this.currency).toUpperCase(),
+        receipt: input.receipt ?? `rcpt_${Date.now()}`,
+        notes: input.notes,
+        partial_payment: input.partialPayment,
+      });
+      return mapOrder(order as Parameters<typeof mapOrder>[0]);
     });
-    return mapOrder(order as Parameters<typeof mapOrder>[0]);
   }
   async createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
     const order = await this.createOrder({
@@ -154,18 +164,20 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
     };
   }
   async capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
-    const payment = await this.client.payments.capture(
-      input.paymentId,
-      input.amount ?? 0,
-      this.currency.toUpperCase(),
-    );
-    return {
-      id: payment.id,
-      status: mapRazorpayStatus(payment.status, payment.captured),
-      amount: Number(payment.amount),
-      currency: payment.currency.toLowerCase(),
-      provider: this.name,
-    };
+    return this.run(async () => {
+      const payment = await this.client.payments.capture(
+        input.paymentId,
+        input.amount ?? 0,
+        this.currency.toUpperCase(),
+      );
+      return {
+        id: payment.id,
+        status: mapRazorpayStatus(payment.status, payment.captured),
+        amount: Number(payment.amount),
+        currency: payment.currency.toLowerCase(),
+        provider: this.name,
+      };
+      });
   }
   async cancelPayment(paymentId: string): Promise<PaymentResult> {
     return this.fetchPayment(paymentId);
@@ -174,38 +186,44 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
     return this.fetchPayment(paymentId);
   }
   async fetchPayment(paymentId: string): Promise<PaymentResult> {
-    const payment = await this.client.payments.fetch(paymentId);
-    return {
-      id: payment.id,
-      status: mapRazorpayStatus(payment.status, payment.captured),
-      amount: Number(payment.amount),
-      currency: payment.currency.toLowerCase(),
-      provider: this.name,
-      metadata: (payment.notes as Record<string, string>) ?? undefined,
-    };
+    return this.run(async () => {
+      const payment = await this.client.payments.fetch(paymentId);
+      return {
+        id: payment.id,
+        status: mapRazorpayStatus(payment.status, payment.captured),
+        amount: Number(payment.amount),
+        currency: payment.currency.toLowerCase(),
+        provider: this.name,
+        metadata: (payment.notes as Record<string, string>) ?? undefined,
+      };
+      });
   }
   async refundPayment(input: RefundPaymentInput): Promise<RefundResult> {
-    const refund = await this.client.payments.refund(input.paymentId, {
-      amount: input.amount,
-      notes: input.reason ? { reason: input.reason } : undefined,
-    });
-    return {
-      id: refund.id,
-      paymentId: input.paymentId,
-      amount: Number(refund.amount),
-      status: refund.status === "processed" ? "succeeded" : "pending",
-      provider: this.name,
-    };
+    return this.run(async () => {
+      const refund = await this.client.payments.refund(input.paymentId, {
+        amount: input.amount,
+        notes: input.reason ? { reason: input.reason } : undefined,
+      });
+      return {
+        id: refund.id,
+        paymentId: input.paymentId,
+        amount: Number(refund.amount),
+        status: refund.status === "processed" ? "succeeded" : "pending",
+        provider: this.name,
+      };
+      });
   }
   async fetchRefund(refundId: string): Promise<RefundResult> {
-    const refund = await this.client.refunds.fetch(refundId);
-    return {
-      id: refund.id,
-      paymentId: String(refund.payment_id),
-      amount: Number(refund.amount),
-      status: refund.status === "processed" ? "succeeded" : "pending",
-      provider: this.name,
-    };
+    return this.run(async () => {
+      const refund = await this.client.refunds.fetch(refundId);
+      return {
+        id: refund.id,
+        paymentId: String(refund.payment_id),
+        amount: Number(refund.amount),
+        status: refund.status === "processed" ? "succeeded" : "pending",
+        provider: this.name,
+      };
+      });
   }
   verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean {
     const expected = crypto
@@ -215,148 +233,168 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
     return timingSafeEqualHex(expected, input.signature);
   }
   async createPlan(input: CreatePlanInput): Promise<Plan> {
-    const period = input.interval === "yearly" ? "yearly" : ("monthly" as const);
-    const interval =
-      input.interval === "yearly" ? 1 : input.interval === "quarterly" ? 3 : 1;
-    const plan = (await this.client.plans.create({
-      period,
-      interval,
-      item: {
+    return this.run(async () => {
+      const period = input.interval === "yearly" ? "yearly" : ("monthly" as const);
+      const interval =
+        input.interval === "yearly" ? 1 : input.interval === "quarterly" ? 3 : 1;
+      const plan = (await this.client.plans.create({
+        period,
+        interval,
+        item: {
+          name: input.name,
+          amount: input.amount,
+          currency: (input.currency ?? this.currency).toUpperCase(),
+          description: input.description,
+        },
+        notes: input.metadata,
+      })) as {
+        id: string;
+      };
+      return {
+        id: plan.id,
         name: input.name,
         amount: input.amount,
-        currency: (input.currency ?? this.currency).toUpperCase(),
-        description: input.description,
-      },
-      notes: input.metadata,
-    })) as {
-      id: string;
-    };
-    return {
-      id: plan.id,
-      name: input.name,
-      amount: input.amount,
-      currency: normalizeCurrency(input.currency ?? this.currency),
-      interval: input.interval,
-      provider: this.name,
-    };
+        currency: normalizeCurrency(input.currency ?? this.currency),
+        interval: input.interval,
+        provider: this.name,
+      };
+      });
   }
   async updatePlan(input: UpdatePlanInput): Promise<Plan> {
-    const plan = await this.client.plans.fetch(input.planId);
-    return {
-      id: plan.id,
-      name: input.name ?? plan.item.name,
-      amount: Number(plan.item.amount),
-      currency: plan.item.currency.toLowerCase(),
-      interval: "monthly",
-      provider: this.name,
-    };
+    return this.run(async () => {
+      const plan = await this.client.plans.fetch(input.planId);
+      return {
+        id: plan.id,
+        name: input.name ?? plan.item.name,
+        amount: Number(plan.item.amount),
+        currency: plan.item.currency.toLowerCase(),
+        interval: "monthly",
+        provider: this.name,
+      };
+      });
   }
   async cancelPlan(planId: string): Promise<Plan> {
-    const plan = await this.client.plans.fetch(planId);
-    return {
-      id: plan.id,
-      name: plan.item.name,
-      amount: Number(plan.item.amount),
-      currency: plan.item.currency.toLowerCase(),
-      interval: "monthly",
-      provider: this.name,
-    };
+    return this.run(async () => {
+      const plan = await this.client.plans.fetch(planId);
+      return {
+        id: plan.id,
+        name: plan.item.name,
+        amount: Number(plan.item.amount),
+        currency: plan.item.currency.toLowerCase(),
+        interval: "monthly",
+        provider: this.name,
+      };
+      });
   }
   async createSubscription(input: CreateSubscriptionInput): Promise<Subscription> {
-    const params: Record<string, unknown> = {
-      plan_id: input.planId,
-      customer_notify: 1,
-      total_count: input.totalCount ?? 12,
-      notes: input.metadata,
-    };
-    if (input.customerId) {
-      params.customer_id = input.customerId;
-    }
-    const subscription = (await this.client.subscriptions.create(
-      params as never,
-    )) as RazorpaySubscriptionEntity;
-    return mapRazorpaySubscription(subscription, input.customerId);
+    return this.run(async () => {
+      const params: Record<string, unknown> = {
+        plan_id: input.planId,
+        customer_notify: 1,
+        total_count: input.totalCount ?? 12,
+        notes: input.metadata,
+      };
+      if (input.customerId) {
+        params.customer_id = input.customerId;
+      }
+      const subscription = (await this.client.subscriptions.create(
+        params as never,
+      )) as RazorpaySubscriptionEntity;
+      return mapRazorpaySubscription(subscription, input.customerId);
+      });
   }
   async cancelSubscription(subscriptionId: string): Promise<Subscription> {
-    const subscription = (await this.client.subscriptions.cancel(
-      subscriptionId,
-      false,
-    )) as RazorpaySubscriptionEntity;
-    return {
-      ...mapRazorpaySubscription(subscription),
-      cancelAtPeriodEnd: false,
-    };
+    return this.run(async () => {
+      const subscription = (await this.client.subscriptions.cancel(
+        subscriptionId,
+        false,
+      )) as RazorpaySubscriptionEntity;
+      return {
+        ...mapRazorpaySubscription(subscription),
+        cancelAtPeriodEnd: false,
+      };
+      });
   }
   async scheduleCancellation(subscriptionId: string): Promise<Subscription> {
-    const subscription = (await this.client.subscriptions.cancel(
-      subscriptionId,
-      true,
-    )) as RazorpaySubscriptionEntity;
-    return {
-      ...mapRazorpaySubscription(subscription),
-      cancelAtPeriodEnd: true,
-    };
+    return this.run(async () => {
+      const subscription = (await this.client.subscriptions.cancel(
+        subscriptionId,
+        true,
+      )) as RazorpaySubscriptionEntity;
+      return {
+        ...mapRazorpaySubscription(subscription),
+        cancelAtPeriodEnd: true,
+      };
+      });
   }
   async renewSubscription(subscriptionId: string): Promise<Subscription> {
-    const subscription = (await this.client.subscriptions.fetch(
-      subscriptionId,
-    )) as RazorpaySubscriptionEntity;
-    return {
-      ...mapRazorpaySubscription(subscription),
-      cancelAtPeriodEnd: false,
-    };
+    return this.run(async () => {
+      const subscription = (await this.client.subscriptions.fetch(
+        subscriptionId,
+      )) as RazorpaySubscriptionEntity;
+      return {
+        ...mapRazorpaySubscription(subscription),
+        cancelAtPeriodEnd: false,
+      };
+      });
   }
   async pauseSubscription(input: PauseSubscriptionInput): Promise<Subscription> {
-    const current = (await this.client.subscriptions.fetch(
-      input.subscriptionId,
-    )) as RazorpaySubscriptionEntity;
-    const providerStatus = current.status.toLowerCase();
+    return this.run(async () => {
+      const current = (await this.client.subscriptions.fetch(
+        input.subscriptionId,
+      )) as RazorpaySubscriptionEntity;
+      const providerStatus = current.status.toLowerCase();
 
-    if (providerStatus === "paused") {
-      return mapRazorpaySubscription(current);
-    }
+      if (providerStatus === "paused") {
+        return mapRazorpaySubscription(current);
+      }
 
-    // Razorpay: only active can pause; pausing authenticated cancels the subscription.
-    if (providerStatus === "authenticated") {
-      const cancelled = (await this.client.subscriptions.pause(
+      // Razorpay: only active can pause; pausing authenticated cancels the subscription.
+      if (providerStatus === "authenticated") {
+        const cancelled = (await this.client.subscriptions.pause(
+          input.subscriptionId,
+          { pause_at: "now" },
+        )) as RazorpaySubscriptionEntity;
+        return mapRazorpaySubscription(cancelled);
+      }
+
+      if (providerStatus !== "active") {
+        throw new SubscriptionLifecycleError(
+          `Cannot pause Razorpay subscription in "${current.status}" state; only active subscriptions can be paused`,
+        );
+      }
+
+      const subscription = (await this.client.subscriptions.pause(
         input.subscriptionId,
         { pause_at: "now" },
       )) as RazorpaySubscriptionEntity;
-      return mapRazorpaySubscription(cancelled);
-    }
-
-    if (providerStatus !== "active") {
-      throw new SubscriptionLifecycleError(
-        `Cannot pause Razorpay subscription in "${current.status}" state; only active subscriptions can be paused`,
-      );
-    }
-
-    const subscription = (await this.client.subscriptions.pause(
-      input.subscriptionId,
-      { pause_at: "now" },
-    )) as RazorpaySubscriptionEntity;
-    return mapRazorpaySubscription(subscription);
+      return mapRazorpaySubscription(subscription);
+      });
   }
   async resumeSubscription(subscriptionId: string): Promise<Subscription> {
-    const current = (await this.client.subscriptions.fetch(
-      subscriptionId,
-    )) as RazorpaySubscriptionEntity;
-    if (current.status.toLowerCase() !== "paused") {
-      throw new SubscriptionLifecycleError(
-        `Cannot resume Razorpay subscription in "${current.status}" state; only paused subscriptions can be resumed`,
-      );
-    }
-    const subscription = (await this.client.subscriptions.resume(
-      subscriptionId,
-      { resume_at: "now" },
-    )) as RazorpaySubscriptionEntity;
-    return mapRazorpaySubscription(subscription);
+    return this.run(async () => {
+      const current = (await this.client.subscriptions.fetch(
+        subscriptionId,
+      )) as RazorpaySubscriptionEntity;
+      if (current.status.toLowerCase() !== "paused") {
+        throw new SubscriptionLifecycleError(
+          `Cannot resume Razorpay subscription in "${current.status}" state; only paused subscriptions can be resumed`,
+        );
+      }
+      const subscription = (await this.client.subscriptions.resume(
+        subscriptionId,
+        { resume_at: "now" },
+      )) as RazorpaySubscriptionEntity;
+      return mapRazorpaySubscription(subscription);
+      });
   }
   async retrieveSubscription(subscriptionId: string): Promise<Subscription> {
-    const subscription = (await this.client.subscriptions.fetch(
-      subscriptionId,
-    )) as RazorpaySubscriptionEntity;
-    return mapRazorpaySubscription(subscription);
+    return this.run(async () => {
+      const subscription = (await this.client.subscriptions.fetch(
+        subscriptionId,
+      )) as RazorpaySubscriptionEntity;
+      return mapRazorpaySubscription(subscription);
+      });
   }
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
     if (!this.config.webhookSecret) {
@@ -449,14 +487,23 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
     }
     if (!response.ok) {
       const body = payload as {
-        error?: { description?: string };
+        error?: { description?: string; code?: string; field?: string };
         message?: string;
       };
-      throw new PaymentError(
-        body.error?.description ??
-          body.message ??
-          `Razorpay transfer request failed with status ${response.status}`,
-      );
+      const headers: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+      mapRazorpayError({
+        statusCode: response.status,
+        error: body.error ?? {
+          description:
+            body.message ??
+            `Razorpay transfer request failed with status ${response.status}`,
+        },
+        message: body.message,
+        headers,
+      });
     }
     return payload as Record<string, unknown>;
   }
