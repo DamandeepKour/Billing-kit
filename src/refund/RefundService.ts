@@ -19,7 +19,7 @@ export class RefundService {
         ...input,
         idempotencyKey: key,
       });
-      return { ...result, idempotencyKey: key };
+      return { ...result, idempotencyKey: key, metadata: input.metadata };
     }
 
     const execution = await executeIdempotentRequest({
@@ -30,19 +30,21 @@ export class RefundService {
         paymentId: input.paymentId,
         amount: input.amount,
         reason: input.reason,
+        metadata: input.metadata,
       },
       run: async (idempotencyKey) => {
         const result = await this.gateway.refundPayment({
           ...input,
           idempotencyKey,
         });
-        return { ...result, idempotencyKey };
+        return { ...result, idempotencyKey, metadata: input.metadata };
       },
       providerResponse: (result) => result.providerResponse,
     });
     return {
       ...execution.result,
       idempotencyKey: execution.idempotencyKey,
+      metadata: execution.result.metadata ?? input.metadata,
     };
   }
 }

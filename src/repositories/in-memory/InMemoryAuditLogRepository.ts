@@ -56,6 +56,15 @@ export class InMemoryAuditLogRepository implements AuditLogRepository {
           e.relatedResourceIds?.includes(related) === true,
       );
     }
+    if (filter?.requestId) {
+      rows = rows.filter((e) => e.requestId === filter.requestId);
+    }
+    if (filter?.webhookEventId) {
+      rows = rows.filter((e) => e.webhookEventId === filter.webhookEventId);
+    }
+    if (filter?.correlationId) {
+      rows = rows.filter((e) => e.correlationId === filter.correlationId);
+    }
 
     return rows.sort(compareAuditEntries);
   }

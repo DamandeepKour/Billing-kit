@@ -1,3 +1,4 @@
+import type { OperationObservability } from "./observability";
 import type { TaxBreakdown } from "./tax";
 import type { ExchangeRateMetadata, FeeBreakdown } from "./settlement";
 import type {
@@ -79,6 +80,7 @@ export interface GenerateInvoiceInput {
   exchangeRate?: ExchangeRateMetadata;
   fees?: FeeBreakdown;
   providerResponse?: Record<string, unknown>;
+  metadata?: Record<string, string>;
 }
 export interface InvoiceSummary {
   subtotal: number;
@@ -109,4 +111,6 @@ export interface Invoice extends InvoiceSummary {
   exchangeRate?: ExchangeRateMetadata;
   fees?: FeeBreakdown;
   providerResponse?: Record<string, unknown>;
+  metadata?: Record<string, string>;
+  observability?: OperationObservability;
 }

@@ -37,6 +37,12 @@ export interface RecordBillingEventInput {
   actor?: AuditActor;
   payload?: Record<string, unknown>;
   relatedResourceIds?: string[];
+  requestId?: string;
+  webhookEventId?: string;
+  retryCount?: number;
+  durationMs?: number;
+  correlationId?: string;
+  outcome?: "success" | "failure";
 }
 
 export interface AuditLogEntry {
@@ -50,6 +56,12 @@ export interface AuditLogEntry {
   actor: AuditActor;
   payloadSummary: Record<string, unknown>;
   relatedResourceIds?: string[];
+  requestId?: string;
+  webhookEventId?: string;
+  retryCount?: number;
+  durationMs?: number;
+  correlationId?: string;
+  outcome?: "success" | "failure";
 }
 
 export interface AuditLogFilter {
@@ -60,4 +72,7 @@ export interface AuditLogFilter {
   from?: Date;
   to?: Date;
   relatedResourceId?: string;
+  requestId?: string;
+  webhookEventId?: string;
+  correlationId?: string;
 }

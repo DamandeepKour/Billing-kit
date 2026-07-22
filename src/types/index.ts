@@ -203,3 +203,13 @@ export type {
   AuditResourceType,
   RecordBillingEventInput,
 } from "./audit";
+export type {
+  BillingObservabilityEvent,
+  BillingObservabilityEventName,
+  BillingObservabilityHooks,
+  ConsoleLoggerOptions,
+  LogLevel,
+  Logger,
+  OperationObservability,
+  StructuredLogFields,
+} from "./observability";

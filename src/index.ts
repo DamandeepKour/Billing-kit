@@ -14,6 +14,12 @@ export type {
   AttachProfilePaymentMethodInput,
   AuditAction,
   AuditActor,
+  LogLevel,
+  StructuredLogFields,
+  OperationObservability,
+  Logger,
+  BillingObservabilityHooks,
+  BillingObservabilityEvent,
   AuditLogEntry,
   AuditLogFilter,
   AuditResourceType,
@@ -177,6 +183,11 @@ export {
   profileToCustomer,
 } from "./types";
 export { AuditLogService } from "./audit";
+export {
+  ConsoleLogger,
+  NoopLogger,
+  ObservabilityService,
+} from "./observability";
 export { CouponService, resolveCouponValue } from "./coupon";
 export { EntitlementError, EntitlementService } from "./entitlement";
 export {

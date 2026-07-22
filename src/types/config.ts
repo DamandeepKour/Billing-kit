@@ -9,6 +9,10 @@ import type { TransferRequestRepository } from "../interfaces/TransferRequestRep
 import type { IdempotencyRequestRepository } from "../interfaces/IdempotencyRequestRepository";
 import type { AuditActor } from "./audit";
 import type { BillingRetryHooks, RetryPolicyConfig } from "./retry";
+import type {
+  BillingObservabilityHooks,
+  Logger,
+} from "./observability";
 
 export type BillingProvider = "stripe" | "razorpay";
 
@@ -42,6 +46,10 @@ export interface BillingKitConfig {
   tax?: TaxConfig;
   retry?: RetryPolicyConfig;
   retryHooks?: BillingRetryHooks;
+  /** Structured logger for operations (defaults to noop). */
+  logger?: Logger;
+  /** Success / failure monitoring hooks. */
+  observabilityHooks?: BillingObservabilityHooks;
   invoiceRepository?: InvoiceRepository;
   transactionRepository?: TransactionRepository;
   retryAttemptRepository?: RetryAttemptRepository;

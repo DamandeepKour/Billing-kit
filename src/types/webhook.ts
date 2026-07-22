@@ -48,6 +48,8 @@ export interface WebhookEventRecord {
   resourceId: string;
   occurredAt?: Date;
   error?: string;
+  durationMs?: number;
+  requestId?: string;
 }
 export interface ClaimWebhookEventResult {
   outcome: "claimed" | "duplicate" | "out_of_order";
@@ -67,6 +69,7 @@ export interface ProcessWebhookResult {
   record: WebhookEventRecord;
   duplicate: boolean;
   outOfOrder: boolean;
+  durationMs?: number;
 }
 export const RAZORPAY_WEBHOOK_EVENTS = [
   "payment.captured",

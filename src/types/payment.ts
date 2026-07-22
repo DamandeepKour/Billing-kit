@@ -1,3 +1,4 @@
+import type { OperationObservability } from "./observability";
 import type { ExchangeRateMetadata, FeeBreakdown } from "./settlement";
 export type PaymentStatus =
   | "pending"
@@ -46,12 +47,14 @@ export interface PaymentResult {
   appliedPromotionCode?: string;
   appliedCouponCode?: string;
   idempotencyKey?: string;
+  observability?: OperationObservability;
 }
 export interface RefundPaymentInput {
   paymentId: string;
   amount?: number;
   reason?: string;
   idempotencyKey?: string;
+  metadata?: Record<string, string>;
 }
 export interface RefundResult {
   id: string;
@@ -64,4 +67,6 @@ export interface RefundResult {
   fees?: FeeBreakdown;
   providerResponse?: Record<string, unknown>;
   idempotencyKey?: string;
+  metadata?: Record<string, string>;
+  observability?: OperationObservability;
 }

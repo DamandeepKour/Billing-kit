@@ -150,6 +150,11 @@ import { TaxService } from "../tax";
 import { TransactionService } from "../transaction";
 import { UsageBillingService } from "../usage";
 import { InvalidConfigError } from "../utils/errors";
+import {
+  NoopLogger,
+  ObservabilityService,
+} from "../observability";
+import type { OperationObservability } from "../types/observability";
 import { WebhookService } from "../webhook";
 
 export class BillingKit {
@@ -170,6 +175,7 @@ export class BillingKit {
   private readonly usageBillingService: UsageBillingService;
   private readonly entitlementService: EntitlementService;
   private readonly idempotencyRequests: IdempotencyRequestRepository;
+  private readonly observability: ObservabilityService;
 
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
@@ -250,23 +256,37 @@ export class BillingKit {
     );
     this.usageBillingService = new UsageBillingService(usageEventRepository);
     this.entitlementService = new EntitlementService(entitlementRepository);
+    this.observability = new ObservabilityService(
+      this.config.logger ?? new NoopLogger(),
+      this.config.observabilityHooks ?? {},
+      this.config.provider,
+    );
   }
 
   generateInvoice(input: GenerateInvoiceInput): Promise<Invoice> {
     return this.withAudit(
       () => this.invoiceService.generateInvoice(input),
-      (invoice) => ({
+      {
+        action: "invoice.created",
+        resourceType: "invoice",
+        metadata: input.metadata,
+      },
+      (invoice, obs) => ({
         action: "invoice.created",
         resourceType: "invoice",
         resourceId: invoice.id,
+        outcome: "success",
+        ...obsFields(obs),
         payload: {
           invoiceNumber: invoice.number,
           status: invoice.status,
           total: invoice.total,
           currency: invoice.currency,
           customerEmail: invoice.customer?.email,
+          metadata: invoice.metadata ?? input.metadata,
         },
       }),
+      (invoice, obs) => ({ ...invoice, observability: obs }),
     );
   }
 
@@ -329,27 +349,40 @@ export class BillingKit {
   refundPayment(input: RefundPaymentInput): Promise<RefundResult> {
     return this.withAudit(
       () => this.refundService.refundPayment(input),
-      (refund) => ({
+      {
+        action: "refund.created",
+        resourceType: "refund",
+        resourceId: input.paymentId,
+        metadata: input.metadata,
+      },
+      (refund, obs) => ({
         action: "refund.created",
         resourceType: "refund",
         resourceId: refund.id,
         relatedResourceIds: [input.paymentId],
+        outcome: "success",
+        ...obsFields(obs),
         payload: {
           paymentId: input.paymentId,
           amount: refund.amount,
           status: refund.status,
+          metadata: refund.metadata ?? input.metadata,
         },
       }),
-      async (error) => {
+      (refund, obs) => ({ ...refund, observability: obs }),
+      async (error, obs) => {
         await this.auditLogService.recordBillingEvent({
           action: "refund.created",
           resourceType: "refund",
           resourceId: input.paymentId,
           relatedResourceIds: [input.paymentId],
+          outcome: "failure",
+          ...obsFields(obs),
           payload: {
             paymentId: input.paymentId,
             amount: input.amount,
             status: "failed",
+            metadata: input.metadata,
             error: error instanceof Error ? error.message : String(error),
           },
         });
@@ -600,10 +633,16 @@ export class BillingKit {
   recordUsageEvent(input: RecordUsageEventInput): Promise<UsageEvent> {
     return this.withAudit(
       () => this.usageBillingService.recordUsageEvent(input),
-      (event) => ({
+      {
+        action: "usage.recorded",
+        resourceType: "usage",
+      },
+      (event, obs) => ({
         action: "usage.recorded",
         resourceType: "usage",
         resourceId: event.id,
+        outcome: "success",
+        ...obsFields(obs),
         relatedResourceIds: [
           event.customerId,
           ...(event.subscriptionId ? [event.subscriptionId] : []),
@@ -769,10 +808,16 @@ export class BillingKit {
   recordTransaction(input: RecordTransactionInput): Promise<Transaction> {
     return this.withAudit(
       () => this.transactionService.recordTransaction(input),
-      (txn) => ({
+      {
+        action: "transaction.recorded",
+        resourceType: "transaction",
+      },
+      (txn, obs) => ({
         action: "transaction.recorded",
         resourceType: "transaction",
         resourceId: txn.id,
+        outcome: "success",
+        ...obsFields(obs),
         relatedResourceIds: txn.referenceId ? [txn.referenceId] : undefined,
         payload: {
           type: txn.type,
@@ -910,15 +955,24 @@ export class BillingKit {
   ): Promise<Invoice> {
     return this.withAudit(
       () => this.invoiceService.updateInvoiceStatus(invoiceId, status),
-      (invoice) => ({
+      {
+        action: "invoice.status_updated",
+        resourceType: "invoice",
+        resourceId: invoiceId,
+      },
+      (invoice, obs) => ({
         action: "invoice.status_updated",
         resourceType: "invoice",
         resourceId: invoice.id,
+        outcome: "success",
+        ...obsFields(obs),
         payload: {
           invoiceNumber: invoice.number,
           status: invoice.status,
+          metadata: invoice.metadata,
         },
       }),
+      (invoice, obs) => ({ ...invoice, observability: obs }),
     );
   }
 
@@ -945,32 +999,69 @@ export class BillingKit {
     request: RawWebhookRequest,
     handler: WebhookEventHandler,
   ): Promise<ProcessWebhookResult> {
-    const result = await this.webhookService.processWebhook(
-      request,
-      async (event) => {
-        await this.entitlementService.syncWebhookEvent(event);
-        await handler(event);
-      },
-    );
-    this.queueAudit({
-      action: "webhook.received",
-      resourceType: "webhook",
-      resourceId: result.record.eventId,
-      actor: { type: "webhook", id: result.event.provider },
-      relatedResourceIds: result.event.entity.id
-        ? [result.event.entity.id]
-        : undefined,
-      payload: {
-        type: result.event.type,
-        normalizedType: result.event.normalizedType,
-        entityKind: result.event.entity.kind,
-        entityId: result.event.entity.id,
-        processingStatus: result.record.status,
-        duplicate: result.duplicate,
-        outOfOrder: result.outOfOrder,
-      },
-    });
-    return result;
+    try {
+      const result = await this.webhookService.processWebhook(
+        request,
+        async (event) => {
+          await this.entitlementService.syncWebhookEvent(event);
+          await handler(event);
+        },
+      );
+      const webhookEventId = result.record.eventId;
+      const durationMs = result.durationMs ?? result.record.durationMs;
+      this.queueAudit({
+        action: "webhook.received",
+        resourceType: "webhook",
+        resourceId: webhookEventId,
+        actor: { type: "webhook", id: result.event.provider },
+        relatedResourceIds: result.event.entity.id
+          ? [result.event.entity.id]
+          : undefined,
+        webhookEventId,
+        durationMs,
+        outcome: result.duplicate || result.outOfOrder ? "success" : "success",
+        payload: {
+          type: result.event.type,
+          normalizedType: result.event.normalizedType,
+          entityKind: result.event.entity.kind,
+          entityId: result.event.entity.id,
+          processingStatus: result.record.status,
+          duplicate: result.duplicate,
+          outOfOrder: result.outOfOrder,
+          durationMs,
+        },
+      });
+      await this.observability.trackWebhook({
+        name: result.duplicate ? "webhook.duplicate" : "webhook.processed",
+        webhookEventId,
+        resourceType: result.event.entity.kind,
+        resourceId: result.event.entity.id,
+        durationMs,
+        outcome: "success",
+        metadata: {
+          type: result.event.type,
+          duplicate: result.duplicate,
+          outOfOrder: result.outOfOrder,
+        },
+      });
+      return result;
+    } catch (error) {
+      const webhookEventId = request.eventId ?? "unknown";
+      await this.observability.trackWebhook({
+        name: "webhook.failed",
+        webhookEventId,
+        durationMs: undefined,
+        outcome: "failure",
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+          code:
+            error && typeof error === "object" && "code" in error
+              ? String((error as { code: unknown }).code)
+              : undefined,
+        },
+      });
+      throw error;
+    }
   }
 
   createRawWebhookHandler(
@@ -1041,15 +1132,51 @@ export class BillingKit {
 
   private async withAudit<T>(
     run: () => Promise<T>,
-    toEvent: (result: T) => RecordBillingEventInput,
-    onError?: (error: unknown) => Promise<void>,
+    timing: {
+      action: string;
+      resourceType: string;
+      resourceId?: string;
+      metadata?: Record<string, unknown> | Record<string, string>;
+      retryCount?: number;
+      requestId?: string;
+      webhookEventId?: string;
+    },
+    toEvent: (result: T, obs: OperationObservability) => RecordBillingEventInput,
+    attachObs?: (result: T, obs: OperationObservability) => T,
+    onError?: (
+      error: unknown,
+      obs: OperationObservability,
+    ) => Promise<void>,
   ): Promise<T> {
     try {
-      const result = await run();
-      await this.auditLogService.recordBillingEvent(toEvent(result));
-      return result;
+      const { result, observability } = await this.observability.timed(
+        {
+          action: timing.action,
+          resourceType: timing.resourceType,
+          resourceId: timing.resourceId,
+          metadata: timing.metadata,
+          retryCount: timing.retryCount,
+          requestId: timing.requestId,
+          webhookEventId: timing.webhookEventId,
+        },
+        run,
+      );
+      const enriched = attachObs ? attachObs(result, observability) : result;
+      await this.auditLogService.recordBillingEvent(
+        toEvent(enriched, observability),
+      );
+      return enriched;
     } catch (error) {
-      if (onError) await onError(error);
+      const obs: OperationObservability = {
+        requestId:
+          timing.requestId ??
+          (error && typeof error === "object" && "requestId" in error
+            ? String((error as { requestId: unknown }).requestId)
+            : undefined),
+        webhookEventId: timing.webhookEventId,
+        retryCount: timing.retryCount,
+      };
+      if (onError) await onError(error, obs);
       throw error;
     }
   }
@@ -1057,34 +1184,62 @@ export class BillingKit {
   private async withPaymentAudit(
     run: () => Promise<PaymentResult>,
     action: "payment.attempted" | "payment.captured" | "payment.cancelled",
-    input: { paymentId?: string; amount?: number; currency?: string },
+    input: {
+      paymentId?: string;
+      amount?: number;
+      currency?: string;
+      metadata?: Record<string, string>;
+    },
   ): Promise<PaymentResult> {
-    try {
-      const result = await run();
-      await this.auditLogService.recordBillingEvent({
+    return this.withAudit(
+      run,
+      {
+        action,
+        resourceType: "payment",
+        resourceId: input.paymentId,
+        metadata: input.metadata,
+      },
+      (result, obs) => ({
         action,
         resourceType: "payment",
         resourceId: result.id,
+        outcome: "success",
+        ...obsFields(obs),
         payload: {
           amount: result.amount,
           currency: result.currency,
           status: result.status,
+          metadata: result.metadata ?? input.metadata,
+          idempotencyKey: result.idempotencyKey,
         },
-      });
-      return result;
-    } catch (error) {
-      await this.auditLogService.recordBillingEvent({
-        action: "payment.failed",
-        resourceType: "payment",
-        resourceId: input.paymentId ?? "unknown",
-        payload: {
-          amount: input.amount,
-          currency: input.currency,
-          status: "failed",
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
-      throw error;
-    }
+      }),
+      (result, obs) => ({ ...result, observability: obs }),
+      async (error, obs) => {
+        await this.auditLogService.recordBillingEvent({
+          action: "payment.failed",
+          resourceType: "payment",
+          resourceId: input.paymentId ?? "unknown",
+          outcome: "failure",
+          ...obsFields(obs),
+          payload: {
+            amount: input.amount,
+            currency: input.currency,
+            status: "failed",
+            metadata: input.metadata,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      },
+    );
   }
+}
+
+function obsFields(obs: OperationObservability): Partial<RecordBillingEventInput> {
+  return {
+    requestId: obs.requestId,
+    webhookEventId: obs.webhookEventId,
+    retryCount: obs.retryCount,
+    durationMs: obs.durationMs,
+    correlationId: obs.correlationId,
+  };
 }

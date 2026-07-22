@@ -13,6 +13,7 @@ npm install billing-kit
 - Refunds — full and partial
 - Subscriptions — plans, create, pause / resume, cancel, scheduleCancellation, renew; lifecycle states for Stripe + Razorpay
 - Billing portal — Stripe Customer Portal sessions, customer invoices/subscriptions, payment method update flows
+- Observability — structured logger, success/failure hooks, request/webhook IDs, durations on audits
 - Webhooks — raw-body signature verification + normalized event types (Stripe / Razorpay)
 - Webhook testing — mock payloads, local signature helpers, localhost/staging fixtures
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
@@ -1053,6 +1054,43 @@ await billing.recordBillingEvent({
 
 Each entry includes `timestamp`, `actor`, `provider`, `resourceType`, `resourceId`, and a masked `payloadSummary`.
 
+
+## Observability
+
+Pluggable structured logging and success/failure hooks keep async billing systems in sync. Enable a logger and hooks on `BillingKit`:
+
+```typescript
+import { BillingKit, ConsoleLogger } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  logger: new ConsoleLogger({ json: true, minLevel: "info" }),
+  observabilityHooks: {
+    onSuccess: (event) => {
+      // metrics.increment("billing.success", { action: event.action })
+    },
+    onFailure: (event) => {
+      // alert(event.error?.message, event.requestId)
+    },
+  },
+});
+
+const payment = await billing.createPayment({
+  amount: 99900,
+  metadata: { orderId: "ord_123", accountId: "acc_9" },
+});
+// payment.observability.durationMs / correlationId
+// payment.metadata stays on the result for downstream systems
+
+const invoice = await billing.generateInvoice({
+  /* ... */
+  metadata: { orderId: "ord_123" },
+});
+```
+
+Operations emit structured fields: `requestId`, `webhookEventId`, `retryCount`, `durationMs`, `correlationId`, and `outcome`. The same fields are stored on audit log entries and (where applicable) on payment / invoice / refund results. Webhook processing records `durationMs` on the event record and fires `webhook.processed` / `webhook.failed` / `webhook.duplicate` hooks.
+
 ## Payment & refund idempotency
 
 `createPayment`, `capturePayment`, and `refundPayment` accept an optional `idempotencyKey`. When omitted, BillingKit auto-generates a UUID. Keys and request fingerprints are persisted (in-memory by default, or your `idempotencyRequestRepository`) so safe retries return the same result without charging or refunding twice. Reusing a key with a different payload throws `IdempotencyConflictError`.
@@ -1215,6 +1253,7 @@ try {
 | Customer profile | `createCustomerProfile`, `updateCustomerProfile`, `getCustomerProfile`, `attachPaymentMethod`, `setDefaultPaymentMethod` |
 | Route / splits | `splitPayment`, `createTransfer`, `reverseTransfer`, `getSettlementDetails`, `calculateSplit`, `getTransferRequest`, `listTransferRequests`, `reconcileTransferRequest` |
 | Audit | `recordBillingEvent`, `getInvoiceTimeline`, `getPaymentAuditLog`, `listAuditEvents` |
+| Observability | `logger` + `observabilityHooks` on config; fields on results/audits |
 | Transaction | `recordTransaction`, `getTransaction`, `getRevenueByCurrency`, `getSettlementSummary` |
 | Retry / dunning | `openBillingAttempt`, `reportBillingFailure`, `reportBillingRecovered`, `markBillingUncollectible`, `processDueRetries`, `listRetryAttempts` |
 | Webhook | `verifyWebhook`, `processWebhook`, `createRawWebhookHandler`, `listWebhookEvents` |

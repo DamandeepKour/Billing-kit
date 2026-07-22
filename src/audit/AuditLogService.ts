@@ -34,6 +34,12 @@ export class AuditLogService {
       actor: input.actor ?? this.defaultActor,
       payloadSummary: summarizePayload(input.payload),
       relatedResourceIds: input.relatedResourceIds,
+      requestId: input.requestId,
+      webhookEventId: input.webhookEventId,
+      retryCount: input.retryCount,
+      durationMs: input.durationMs,
+      correlationId: input.correlationId,
+      outcome: input.outcome,
     };
     return this.repository.save(entry);
   }

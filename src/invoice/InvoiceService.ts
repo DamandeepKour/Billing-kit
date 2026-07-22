@@ -224,6 +224,7 @@ export class InvoiceService {
       exchangeRate: input.exchangeRate,
       fees: input.fees,
       providerResponse: input.providerResponse,
+      metadata: input.metadata,
       createdAt: new Date(),
     };
 
