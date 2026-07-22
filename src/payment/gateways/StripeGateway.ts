@@ -129,9 +129,15 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
   }
   async capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
     return withStripeErrors(async () => {
-      const intent = await this.stripe.paymentIntents.capture(input.paymentId, {
-        amount_to_capture: input.amount,
-      });
+      const intent = await this.stripe.paymentIntents.capture(
+        input.paymentId,
+        {
+          amount_to_capture: input.amount,
+        },
+        input.idempotencyKey
+          ? { idempotencyKey: input.idempotencyKey }
+          : undefined,
+      );
       return {
         id: intent.id,
         status: mapPaymentStatus(intent.status),

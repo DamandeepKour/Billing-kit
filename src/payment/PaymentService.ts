@@ -1,5 +1,6 @@
 import type { PaymentGateway } from "../interfaces/PaymentGateway";
 import type { RazorpayBillingProvider } from "../interfaces/RazorpayBillingProvider";
+import type { IdempotencyRequestRepository } from "../interfaces/IdempotencyRequestRepository";
 import type { CouponService } from "../coupon/CouponService";
 import type { CustomerProfileService } from "../customer/CustomerProfileService";
 import type {
@@ -14,6 +15,10 @@ import type {
   RefundResult,
 } from "../types/payment";
 import { resolveCurrency } from "../utils/currency";
+import {
+  executeIdempotentRequest,
+  generateIdempotencyKey,
+} from "../utils/idempotency";
 import { UnsupportedOperationError } from "../utils/stripe-errors";
 
 function isRazorpayBillingProvider(
@@ -33,91 +38,153 @@ export class PaymentService {
     private readonly defaultCurrency?: string,
     private readonly couponService?: CouponService,
     private readonly customerProfileService?: CustomerProfileService,
+    private readonly idempotencyRequests?: IdempotencyRequestRepository,
   ) {}
 
   async createPayment(input: CreatePaymentInput): Promise<PaymentResult> {
-    let customerId = input.customerId;
-    let currencyOverride = input.currency;
-    let metadata = input.metadata;
+    const run = async (idempotencyKey: string): Promise<PaymentResult> => {
+      let customerId = input.customerId;
+      let currencyOverride = input.currency;
+      let metadata = input.metadata;
 
-    if (input.customerProfileId && this.customerProfileService) {
-      const profile = await this.customerProfileService.getCustomerProfile(
-        input.customerProfileId,
-      );
-      customerId = customerId ?? profile.providerCustomerId ?? profile.id;
-      currencyOverride = currencyOverride ?? profile.defaultCurrency;
-      metadata = {
-        ...metadata,
-        customerProfileId: profile.id,
-        ...(profile.paymentPreferences.defaultPaymentMethodId
-          ? {
-              defaultPaymentMethodId:
-                profile.paymentPreferences.defaultPaymentMethodId,
-            }
-          : {}),
-      };
-    }
+      if (input.customerProfileId && this.customerProfileService) {
+        const profile = await this.customerProfileService.getCustomerProfile(
+          input.customerProfileId,
+        );
+        customerId = customerId ?? profile.providerCustomerId ?? profile.id;
+        currencyOverride = currencyOverride ?? profile.defaultCurrency;
+        metadata = {
+          ...metadata,
+          customerProfileId: profile.id,
+          ...(profile.paymentPreferences.defaultPaymentMethodId
+            ? {
+                defaultPaymentMethodId:
+                  profile.paymentPreferences.defaultPaymentMethodId,
+              }
+            : {}),
+        };
+      }
 
-    const currency = resolveCurrency({
-      override: currencyOverride,
-      configDefault: this.defaultCurrency,
-    });
+      const currency = resolveCurrency({
+        override: currencyOverride,
+        configDefault: this.defaultCurrency,
+      });
 
-    let amount = input.amount;
-    let originalAmount = input.amount;
-    let discountAmount = 0;
-    let appliedPromotionCode: string | undefined;
-    let appliedCouponCode: string | undefined;
+      let amount = input.amount;
+      let originalAmount = input.amount;
+      let discountAmount = 0;
+      let appliedPromotionCode: string | undefined;
+      let appliedCouponCode: string | undefined;
 
-    if (this.couponService && (input.promotionCode || input.coupon)) {
-      const checkout = this.couponService.applyCheckoutDiscount({
+      if (this.couponService && (input.promotionCode || input.coupon)) {
+        const checkout = this.couponService.applyCheckoutDiscount({
+          amount,
+          currency,
+          promotionCode: input.promotionCode,
+          coupon: input.coupon,
+          customerId,
+        });
+        originalAmount = checkout.originalAmount;
+        discountAmount = checkout.discountAmount;
+        amount = checkout.finalAmount;
+        appliedPromotionCode = checkout.appliedPromotion?.code;
+        appliedCouponCode =
+          checkout.appliedPromotion?.couponCode ?? input.coupon?.code;
+
+        if (checkout.appliedPromotion) {
+          const promo = this.couponService.getPromotionCode(
+            checkout.appliedPromotion.promotionCodeId,
+          );
+          if (promo) this.couponService.recordRedemption(promo);
+        } else if (input.coupon) {
+          this.couponService.recordRedemption(input.coupon);
+        }
+      }
+
+      const gatewayInput: CreatePaymentInput = {
         amount,
         currency,
-        promotionCode: input.promotionCode,
-        coupon: input.coupon,
         customerId,
-      });
-      originalAmount = checkout.originalAmount;
-      discountAmount = checkout.discountAmount;
-      amount = checkout.finalAmount;
-      appliedPromotionCode = checkout.appliedPromotion?.code;
-      appliedCouponCode =
-        checkout.appliedPromotion?.couponCode ?? input.coupon?.code;
+        orderId: input.orderId,
+        description: input.description,
+        metadata,
+        idempotencyKey,
+        presentmentCurrency: input.presentmentCurrency,
+        settlementCurrency: input.settlementCurrency,
+      };
+      const result = await this.gateway.createPayment(gatewayInput);
 
-      if (checkout.appliedPromotion) {
-        const promo = this.couponService.getPromotionCode(
-          checkout.appliedPromotion.promotionCodeId,
-        );
-        if (promo) this.couponService.recordRedemption(promo);
-      } else if (input.coupon) {
-        this.couponService.recordRedemption(input.coupon);
-      }
+      return {
+        ...result,
+        originalAmount,
+        discountAmount,
+        appliedPromotionCode,
+        appliedCouponCode,
+        idempotencyKey,
+      };
+    };
+
+    if (!this.idempotencyRequests) {
+      return run(input.idempotencyKey?.trim() || generateIdempotencyKey());
     }
 
-    const gatewayInput: CreatePaymentInput = {
-      amount,
-      currency,
-      customerId,
-      orderId: input.orderId,
-      description: input.description,
-      metadata,
-      idempotencyKey: input.idempotencyKey,
-      presentmentCurrency: input.presentmentCurrency,
-      settlementCurrency: input.settlementCurrency,
-    };
-    const result = await this.gateway.createPayment(gatewayInput);
-
+    const execution = await executeIdempotentRequest({
+      repository: this.idempotencyRequests,
+      key: input.idempotencyKey,
+      kind: "create_payment",
+      request: {
+        amount: input.amount,
+        currency: input.currency,
+        customerId: input.customerId,
+        customerProfileId: input.customerProfileId,
+        orderId: input.orderId,
+        description: input.description,
+        metadata: input.metadata,
+        presentmentCurrency: input.presentmentCurrency,
+        settlementCurrency: input.settlementCurrency,
+        promotionCode: input.promotionCode,
+        couponCode: input.coupon?.code,
+      },
+      run,
+      providerResponse: (result) => result.providerResponse,
+    });
     return {
-      ...result,
-      originalAmount,
-      discountAmount,
-      appliedPromotionCode,
-      appliedCouponCode,
+      ...execution.result,
+      idempotencyKey: execution.idempotencyKey,
     };
   }
 
-  capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
-    return this.gateway.capturePayment(input);
+  async capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
+    if (!this.idempotencyRequests) {
+      const key = input.idempotencyKey?.trim() || generateIdempotencyKey();
+      const result = await this.gateway.capturePayment({
+        ...input,
+        idempotencyKey: key,
+      });
+      return { ...result, idempotencyKey: key };
+    }
+
+    const execution = await executeIdempotentRequest({
+      repository: this.idempotencyRequests,
+      key: input.idempotencyKey,
+      kind: "capture_payment",
+      request: {
+        paymentId: input.paymentId,
+        amount: input.amount,
+      },
+      run: async (idempotencyKey) => {
+        const result = await this.gateway.capturePayment({
+          ...input,
+          idempotencyKey,
+        });
+        return { ...result, idempotencyKey };
+      },
+      providerResponse: (result) => result.providerResponse,
+    });
+    return {
+      ...execution.result,
+      idempotencyKey: execution.idempotencyKey,
+    };
   }
 
   cancelPayment(paymentId: string): Promise<PaymentResult> {
@@ -130,7 +197,10 @@ export class PaymentService {
 
   private requireRazorpay(): PaymentGateway & RazorpayBillingProvider {
     if (!isRazorpayBillingProvider(this.gateway)) {
-      throw new UnsupportedOperationError("Razorpay billing helpers", this.gateway.name);
+      throw new UnsupportedOperationError(
+        "Razorpay billing helpers",
+        this.gateway.name,
+      );
     }
     return this.gateway;
   }

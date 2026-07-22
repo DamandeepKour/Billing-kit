@@ -127,6 +127,13 @@ export type {
   TransferSettlementStatus,
 } from "./route";
 export type {
+  ClaimIdempotencyRequestResult,
+  IdempotencyRequestFilter,
+  IdempotencyRequestKind,
+  IdempotencyRequestRecord,
+  IdempotencyRequestStatus,
+} from "./idempotency";
+export type {
   BillingAttemptKind,
   BillingAttemptStatus,
   BillingRetryAttempt,

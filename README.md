@@ -997,6 +997,40 @@ await billing.recordBillingEvent({
 
 Each entry includes `timestamp`, `actor`, `provider`, `resourceType`, `resourceId`, and a masked `payloadSummary`.
 
+## Payment & refund idempotency
+
+`createPayment`, `capturePayment`, and `refundPayment` accept an optional `idempotencyKey`. When omitted, BillingKit auto-generates a UUID. Keys and request fingerprints are persisted (in-memory by default, or your `idempotencyRequestRepository`) so safe retries return the same result without charging or refunding twice. Reusing a key with a different payload throws `IdempotencyConflictError`.
+
+```typescript
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  // idempotencyRequestRepository: myRepo, // optional; defaults to in-memory
+});
+
+const payment = await billing.createPayment({
+  amount: 99900,
+  currency: "inr",
+  idempotencyKey: "checkout_order_123",
+});
+
+// Network timeout? Retry with the same key — same PaymentResult, one gateway call.
+const retried = await billing.createPayment({
+  amount: 99900,
+  currency: "inr",
+  idempotencyKey: "checkout_order_123",
+});
+expect(retried.id).toBe(payment.id);
+
+await billing.refundPayment({
+  paymentId: payment.id,
+  amount: 99900,
+  idempotencyKey: "refund_order_123",
+});
+```
+
+On Stripe, the resolved key is forwarded as Stripe's idempotency key. Razorpay payment/refund calls rely on the local store (Route transfers use a separate transfer request store).
+
 ## Payment & invoice retries (dunning)
 
 Configure Smart Retries–style recovery for failed payments and invoices: max retries, intervals, grace period, and hooks for email/webhook triggers.
@@ -1098,6 +1132,7 @@ try {
 | Payment | `createPayment`, `capturePayment`, `cancelPayment`, `getPaymentStatus` |
 | Razorpay | `createOrder`, `verifyPaymentSignature`, `fetchPayment`, `fetchRefund` |
 | Refund | `refundPayment` |
+| Idempotency | `getIdempotencyRequest`, `listIdempotencyRequests` |
 | Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `cancelSubscription`, `renewSubscription` |
 | Stripe billing | `pauseSubscription`, `resumeSubscription`, `retrieveSubscription`, `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
@@ -1144,7 +1179,7 @@ See [`examples/README.md`](./examples/README.md) for the full layout.
 | Done | Plan feature mapping and subscription entitlement provisioning |
 | Done | Idempotent Route transfers with persisted request reconciliation |
 | Done | Webhook testing helpers (`billing-kit/testing`) and local fixtures |
-| Next | Idempotency store interface for payments and refunds |
+| Done | Idempotency store for payments and refunds |
 | Next | Zod (or similar) runtime validation on public inputs |
 | Next | Webhook event registry / typed handlers on `BillingKit` |
 | Next | Additional subpath exports (`billing-kit/tax`, `billing-kit/invoice`) |

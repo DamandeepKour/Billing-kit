@@ -25,6 +25,7 @@ export interface CreatePaymentInput {
 export interface CapturePaymentInput {
   paymentId: string;
   amount?: number;
+  idempotencyKey?: string;
 }
 export interface PaymentResult {
   id: string;
@@ -44,6 +45,7 @@ export interface PaymentResult {
   discountAmount?: number;
   appliedPromotionCode?: string;
   appliedCouponCode?: string;
+  idempotencyKey?: string;
 }
 export interface RefundPaymentInput {
   paymentId: string;
@@ -61,4 +63,5 @@ export interface RefundResult {
   settlementCurrency?: string;
   fees?: FeeBreakdown;
   providerResponse?: Record<string, unknown>;
+  idempotencyKey?: string;
 }

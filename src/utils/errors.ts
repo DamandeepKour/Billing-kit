@@ -49,7 +49,7 @@ export class IdempotencyConflictError extends BillingKitError {
 export class IdempotencyInFlightError extends BillingKitError {
   constructor(key: string) {
     super(
-      `Transfer request is already in progress or requires reconciliation: ${key}`,
+      `Request is already in progress or requires reconciliation for key: ${key}`,
       "IDEMPOTENCY_IN_FLIGHT",
     );
     this.name = "IdempotencyInFlightError";

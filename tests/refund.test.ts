@@ -35,9 +35,14 @@ describe("RefundService", () => {
       createMockGateway(refundPayment),
     ).refundPayment({ paymentId: "pay_1" });
 
-    expect(refundPayment).toHaveBeenCalledWith({ paymentId: "pay_1" });
+    expect(refundPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentId: "pay_1" }),
+    );
     expect(result.amount).toBe(99900);
     expect(result.status).toBe("succeeded");
+    expect(result.idempotencyKey).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
   });
 
   it("refunds partial amount with reason", async () => {
@@ -57,11 +62,13 @@ describe("RefundService", () => {
       reason: "requested_by_customer",
     });
 
-    expect(refundPayment).toHaveBeenCalledWith({
-      paymentId: "pay_1",
-      amount: 25000,
-      reason: "requested_by_customer",
-    });
+    expect(refundPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentId: "pay_1",
+        amount: 25000,
+        reason: "requested_by_customer",
+      }),
+    );
     expect(result.id).toBe("re_partial");
     expect(result.amount).toBe(25000);
   });

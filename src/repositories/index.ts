@@ -8,4 +8,5 @@ export {
   InMemoryUsageEventRepository,
   InMemoryEntitlementRepository,
   InMemoryTransferRequestRepository,
+  InMemoryIdempotencyRequestRepository,
 } from "./in-memory";

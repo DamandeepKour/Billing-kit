@@ -114,10 +114,16 @@ import { EntitlementService } from "../entitlement";
 import { InvoiceService } from "../invoice";
 import { InvoicePdfGenerator } from "../pdf";
 import { PaymentManager, PaymentService } from "../payment";
+import type { IdempotencyRequestRepository } from "../interfaces/IdempotencyRequestRepository";
+import type {
+  IdempotencyRequestFilter,
+  IdempotencyRequestRecord,
+} from "../types/idempotency";
 import {
   InMemoryAuditLogRepository,
   InMemoryCustomerProfileRepository,
   InMemoryEntitlementRepository,
+  InMemoryIdempotencyRequestRepository,
   InMemoryInvoiceRepository,
   InMemoryRetryAttemptRepository,
   InMemoryTransferRequestRepository,
@@ -152,6 +158,7 @@ export class BillingKit {
   private readonly auditLogService: AuditLogService;
   private readonly usageBillingService: UsageBillingService;
   private readonly entitlementService: EntitlementService;
+  private readonly idempotencyRequests: IdempotencyRequestRepository;
 
   constructor(config: BillingKitConfig) {
     if (!config.secretKey) {
@@ -186,6 +193,9 @@ export class BillingKit {
     const transferRequestRepository =
       this.config.transferRequestRepository ??
       new InMemoryTransferRequestRepository();
+    this.idempotencyRequests =
+      this.config.idempotencyRequestRepository ??
+      new InMemoryIdempotencyRequestRepository();
     const paymentManager = new PaymentManager(this.config);
     const gateway = paymentManager.getGateway();
     this.couponService = new CouponService();
@@ -204,8 +214,9 @@ export class BillingKit {
       this.config.currency,
       this.couponService,
       this.customerProfileService,
+      this.idempotencyRequests,
     );
-    this.refundService = new RefundService(gateway);
+    this.refundService = new RefundService(gateway, this.idempotencyRequests);
     this.subscriptionService = new SubscriptionService(gateway, this.couponService);
     this.taxService = new TaxService();
     this.transactionService = new TransactionService(transactionRepository);
@@ -756,6 +767,18 @@ export class BillingKit {
     idempotencyKey: string,
   ): Promise<TransferRequestRecord | null> {
     return this.routeService.reconcileTransferRequest(idempotencyKey);
+  }
+
+  getIdempotencyRequest(
+    idempotencyKey: string,
+  ): Promise<IdempotencyRequestRecord | null> {
+    return this.idempotencyRequests.findByKey(idempotencyKey);
+  }
+
+  listIdempotencyRequests(
+    filter?: IdempotencyRequestFilter,
+  ): Promise<IdempotencyRequestRecord[]> {
+    return this.idempotencyRequests.list(filter);
   }
 
   openBillingAttempt(input: OpenBillingAttemptInput): Promise<BillingRetryAttempt> {
