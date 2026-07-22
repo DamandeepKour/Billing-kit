@@ -13,11 +13,21 @@ import type {
 import type {
   AttachPaymentMethodInput,
   CreateProviderCustomerInput,
+  CustomerPaymentMethod,
+  DetachPaymentMethodInput,
+  ListCustomerInvoicesInput,
+  ListCustomerSubscriptionsInput,
+  ListPaymentMethodsInput,
   PaymentMethodResult,
   ProviderCustomer,
   ProviderInvoice,
   SetDefaultPaymentMethodInput,
 } from "../../types/provider";
+import type {
+  BillingPortalSession,
+  CreateBillingPortalSessionInput,
+  CreatePaymentMethodUpdateSessionInput,
+} from "../../types/billing-portal";
 import type {
   AggregateUsage,
   BillingInterval,
@@ -92,6 +102,30 @@ function mapSubscription(
     provider: "stripe",
     subscriptionItemId: item?.id,
     paused,
+  };
+}
+
+function mapProviderInvoice(invoice: Stripe.Invoice, provider: string): ProviderInvoice {
+  const customerId =
+    typeof invoice.customer === "string"
+      ? invoice.customer
+      : (invoice.customer?.id ?? "");
+  const subscriptionId =
+    typeof invoice.subscription === "string"
+      ? invoice.subscription
+      : (invoice.subscription?.id ?? null);
+  return {
+    id: invoice.id,
+    customerId,
+    status: invoice.status,
+    amountDue: invoice.amount_due,
+    amountPaid: invoice.amount_paid,
+    currency: invoice.currency,
+    hostedInvoiceUrl: invoice.hosted_invoice_url,
+    invoicePdfUrl: invoice.invoice_pdf,
+    subscriptionId,
+    provider,
+    createdAt: new Date(invoice.created * 1000),
   };
 }
 export class StripeGateway implements PaymentGateway, StripeBillingProvider {
@@ -414,26 +448,178 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
   async retrieveProviderInvoice(invoiceId: string): Promise<ProviderInvoice> {
     return withStripeErrors(async () => {
       const invoice = await this.stripe.invoices.retrieve(invoiceId);
+      return mapProviderInvoice(invoice, this.name);
+    });
+  }
+  async listCustomerInvoices(
+    input: ListCustomerInvoicesInput,
+  ): Promise<ProviderInvoice[]> {
+    return withStripeErrors(async () => {
+      const invoices = await this.stripe.invoices.list({
+        customer: input.customerId,
+        status: input.status,
+        limit: input.limit ?? 20,
+        starting_after: input.startingAfter,
+      });
+      return invoices.data.map((invoice) => mapProviderInvoice(invoice, this.name));
+    });
+  }
+  async listCustomerSubscriptions(
+    input: ListCustomerSubscriptionsInput,
+  ): Promise<Subscription[]> {
+    return withStripeErrors(async () => {
+      const params: Stripe.SubscriptionListParams = {
+        customer: input.customerId,
+        limit: input.limit ?? 20,
+        starting_after: input.startingAfter,
+      };
+      if (input.status && input.status !== "all") {
+        params.status = input.status;
+      }
+      const subscriptions = await this.stripe.subscriptions.list(params);
+      return subscriptions.data.map((subscription) => mapSubscription(subscription));
+    });
+  }
+  async listPaymentMethods(
+    input: ListPaymentMethodsInput,
+  ): Promise<CustomerPaymentMethod[]> {
+    return withStripeErrors(async () => {
+      const customer = await this.stripe.customers.retrieve(input.customerId);
+      const defaultPm =
+        !customer.deleted
+          ? customer.invoice_settings?.default_payment_method
+          : null;
+      const defaultId =
+        typeof defaultPm === "string" ? defaultPm : defaultPm?.id;
+      const methods = await this.stripe.paymentMethods.list({
+        customer: input.customerId,
+        type: (input.type ?? "card") as Stripe.PaymentMethodListParams.Type,
+        limit: input.limit ?? 20,
+      });
+      return methods.data.map((method) => ({
+        id: method.id,
+        customerId: input.customerId,
+        type: method.type,
+        brand: method.card?.brand ?? null,
+        last4: method.card?.last4 ?? null,
+        expMonth: method.card?.exp_month ?? null,
+        expYear: method.card?.exp_year ?? null,
+        isDefault: defaultId === method.id,
+        provider: this.name,
+      }));
+    });
+  }
+  async detachPaymentMethod(
+    input: DetachPaymentMethodInput,
+  ): Promise<PaymentMethodResult> {
+    return withStripeErrors(async () => {
+      const paymentMethod = await this.stripe.paymentMethods.detach(
+        input.paymentMethodId,
+      );
       const customerId =
-        typeof invoice.customer === "string"
-          ? invoice.customer
-          : (invoice.customer?.id ?? "");
-      const subscriptionId =
-        typeof invoice.subscription === "string"
-          ? invoice.subscription
-          : (invoice.subscription?.id ?? null);
+        typeof paymentMethod.customer === "string"
+          ? paymentMethod.customer
+          : (paymentMethod.customer?.id ?? "");
       return {
-        id: invoice.id,
+        id: paymentMethod.id,
         customerId,
-        status: invoice.status,
-        amountDue: invoice.amount_due,
-        amountPaid: invoice.amount_paid,
-        currency: invoice.currency,
-        hostedInvoiceUrl: invoice.hosted_invoice_url,
-        invoicePdfUrl: invoice.invoice_pdf,
-        subscriptionId,
+        type: paymentMethod.type,
         provider: this.name,
       };
+    });
+  }
+  async createBillingPortalSession(
+    input: CreateBillingPortalSessionInput,
+  ): Promise<BillingPortalSession> {
+    return withStripeErrors(async () => {
+      const params: Stripe.BillingPortal.SessionCreateParams = {
+        customer: input.customerId,
+        return_url: input.returnUrl,
+        configuration: input.configurationId,
+        locale: input.locale as Stripe.BillingPortal.SessionCreateParams.Locale | undefined,
+      };
+      if (input.flow) {
+        const flow: Stripe.BillingPortal.SessionCreateParams.FlowData = {
+          type: input.flow.type,
+        };
+        if (
+          input.flow.type === "subscription_cancel" ||
+          input.flow.type === "subscription_update"
+        ) {
+          if (!input.flow.subscriptionId) {
+            throw new InvalidConfigError(
+              `flow.subscriptionId is required for ${input.flow.type}`,
+            );
+          }
+          if (input.flow.type === "subscription_cancel") {
+            flow.subscription_cancel = {
+              subscription: input.flow.subscriptionId,
+            };
+          } else {
+            flow.subscription_update = {
+              subscription: input.flow.subscriptionId,
+            };
+          }
+        }
+        if (input.flow.type === "subscription_update_confirm") {
+          throw new InvalidConfigError(
+            "subscription_update_confirm requires provider-specific item details; use createBillingPortalSession with a custom Stripe flow or the Dashboard portal",
+          );
+        }
+        if (input.flow.afterCompletion) {
+          if (input.flow.afterCompletion === "redirect") {
+            const returnUrl =
+              input.flow.afterCompletionReturnUrl ?? input.returnUrl;
+            if (!returnUrl) {
+              throw new InvalidConfigError(
+                "afterCompletionReturnUrl or returnUrl is required when afterCompletion is redirect",
+              );
+            }
+            flow.after_completion = {
+              type: "redirect",
+              redirect: { return_url: returnUrl },
+            };
+          } else if (input.flow.afterCompletion === "hosted_confirmation") {
+            flow.after_completion = {
+              type: "hosted_confirmation",
+              hosted_confirmation: input.flow.afterCompletionMessage
+                ? { custom_message: input.flow.afterCompletionMessage }
+                : undefined,
+            };
+          } else {
+            flow.after_completion = { type: "portal_homepage" };
+          }
+        }
+        params.flow_data = flow;
+      }
+      const session = await this.stripe.billingPortal.sessions.create(params);
+      return {
+        id: session.id,
+        url: session.url,
+        customerId: session.customer,
+        returnUrl: session.return_url,
+        configurationId:
+          typeof session.configuration === "string"
+            ? session.configuration
+            : session.configuration?.id ?? null,
+        createdAt: new Date(session.created * 1000),
+        provider: this.name,
+      };
+    });
+  }
+  async createPaymentMethodUpdateSession(
+    input: CreatePaymentMethodUpdateSessionInput,
+  ): Promise<BillingPortalSession> {
+    return this.createBillingPortalSession({
+      customerId: input.customerId,
+      returnUrl: input.returnUrl,
+      configurationId: input.configurationId,
+      flow: {
+        type: "payment_method_update",
+        afterCompletion: input.afterCompletion ?? "redirect",
+        afterCompletionReturnUrl:
+          input.afterCompletionReturnUrl ?? input.returnUrl,
+      },
     });
   }
   async reportUsage(input: ReportUsageInput): Promise<UsageRecord> {

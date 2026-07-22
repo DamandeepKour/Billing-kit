@@ -12,6 +12,7 @@ npm install billing-kit
 - Payments — create, capture, cancel, status
 - Refunds — full and partial
 - Subscriptions — plans, create, pause / resume, cancel, scheduleCancellation, renew; lifecycle states for Stripe + Razorpay
+- Billing portal — Stripe Customer Portal sessions, customer invoices/subscriptions, payment method update flows
 - Webhooks — raw-body signature verification + normalized event types (Stripe / Razorpay)
 - Webhook testing — mock payloads, local signature helpers, localhost/staging fixtures
 - Tax engine — GST / VAT / sales tax with `autoTax`, place of supply, and tax line breakdowns
@@ -333,7 +334,55 @@ Aggregation supports `sum`, `max`, and `last`. Billing-cycle aggregation require
 const invoice = await billing.retrieveProviderInvoice("in_xxx");
 console.log(invoice.hostedInvoiceUrl); // customer-facing hosted page
 console.log(invoice.invoicePdfUrl);
+
+const invoices = await billing.listCustomerInvoices({
+  customerId: "cus_xxx",
+  status: "paid",
+});
 ```
+
+### Self-serve account billing (Stripe Customer Portal)
+
+Give customers a Stripe-hosted UI to manage payment methods, invoices, and subscriptions. Enable features in the [Customer portal settings](https://dashboard.stripe.com/settings/billing/portal), then create a short-lived session and redirect.
+
+```typescript
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+});
+
+// Full portal homepage
+const portal = await billing.createBillingPortalSession({
+  customerId: "cus_xxx",
+  returnUrl: "https://app.example.com/account/billing",
+});
+// redirect the browser to portal.url
+
+// Payment method update deep-link
+const updateCard = await billing.createPaymentMethodUpdateSession({
+  customerId: "cus_xxx",
+  returnUrl: "https://app.example.com/account/billing",
+});
+
+const active = await billing.listActiveSubscriptions("cus_xxx");
+const methods = await billing.listPaymentMethods({ customerId: "cus_xxx" });
+await billing.setDefaultPaymentMethod({
+  customerId: "cus_xxx",
+  paymentMethodId: methods[0].id,
+});
+// await billing.detachPaymentMethod({ paymentMethodId: "pm_xxx" });
+```
+
+| Method | Behavior |
+|--------|----------|
+| `createBillingPortalSession` | Stripe Customer Portal session URL (optional `flow` deep-links) |
+| `createPaymentMethodUpdateSession` | Portal session opened on payment method update |
+| `listCustomerInvoices` | Provider invoices for a customer |
+| `listActiveSubscriptions` / `listCustomerSubscriptions` | Subscriptions for a customer |
+| `listPaymentMethods` / `detachPaymentMethod` | Saved cards and removal |
+| `attachPaymentMethod` / `setDefaultPaymentMethod` | Programmatic payment method update without the portal |
+
+Full example: [`examples/stripe/billing-portal.ts`](./examples/stripe/billing-portal.ts)
 
 ### Plan features and entitlements
 
@@ -1141,7 +1190,7 @@ try {
 | Refund | `refundPayment` |
 | Idempotency | `getIdempotencyRequest`, `listIdempotencyRequests` |
 | Subscription | `createPlan`, `updatePlan`, `cancelPlan`, `createSubscription`, `pauseSubscription`, `resumeSubscription`, `scheduleCancellation`, `cancelSubscription`, `renewSubscription`, `retrieveSubscription` |
-| Stripe billing | `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `retrieveProviderInvoice`, `reportUsage` |
+| Stripe billing | `createCustomer`, `attachPaymentMethod`, `setDefaultPaymentMethod`, `detachPaymentMethod`, `listPaymentMethods`, `retrieveProviderInvoice`, `listCustomerInvoices`, `listActiveSubscriptions`, `listCustomerSubscriptions`, `createBillingPortalSession`, `createPaymentMethodUpdateSession`, `reportUsage` |
 | Tax | `calculateTax`, `calculateGST`, `calculateVAT` |
 | Coupon | `registerCoupon`, `createPromotionCode`, `applyCoupon`, `applyPromotionCode`, `removePromotionCode`, `applyCheckoutDiscount`, `validateCoupon` |
 | Customer profile | `createCustomerProfile`, `updateCustomerProfile`, `getCustomerProfile`, `attachPaymentMethod`, `setDefaultPaymentMethod` |

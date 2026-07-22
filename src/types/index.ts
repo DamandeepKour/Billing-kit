@@ -68,11 +68,24 @@ export type {
 export type {
   AttachPaymentMethodInput,
   CreateProviderCustomerInput,
+  CustomerPaymentMethod,
+  DetachPaymentMethodInput,
+  ListCustomerInvoicesInput,
+  ListCustomerSubscriptionsInput,
+  ListPaymentMethodsInput,
   PaymentMethodResult,
   ProviderCustomer,
   ProviderInvoice,
   SetDefaultPaymentMethodInput,
 } from "./provider";
+export type {
+  BillingPortalAfterCompletion,
+  BillingPortalFlowInput,
+  BillingPortalFlowType,
+  BillingPortalSession,
+  CreateBillingPortalSessionInput,
+  CreatePaymentMethodUpdateSessionInput,
+} from "./billing-portal";
 export type {
   GSTInput,
   SalesTaxInput,

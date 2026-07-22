@@ -44,11 +44,21 @@ import type { GeneratePdfInput } from "../types/pdf";
 import type {
   AttachPaymentMethodInput,
   CreateProviderCustomerInput,
+  CustomerPaymentMethod,
+  DetachPaymentMethodInput,
+  ListCustomerInvoicesInput,
+  ListCustomerSubscriptionsInput,
+  ListPaymentMethodsInput,
   PaymentMethodResult,
   ProviderCustomer,
   ProviderInvoice,
   SetDefaultPaymentMethodInput,
 } from "../types/provider";
+import type {
+  BillingPortalSession,
+  CreateBillingPortalSessionInput,
+  CreatePaymentMethodUpdateSessionInput,
+} from "../types/billing-portal";
 import type {
   CreatePlanInput,
   CreateSubscriptionInput,
@@ -538,6 +548,49 @@ export class BillingKit {
 
   retrieveProviderInvoice(invoiceId: string): Promise<ProviderInvoice> {
     return this.subscriptionService.retrieveProviderInvoice(invoiceId);
+  }
+
+  listCustomerInvoices(
+    input: ListCustomerInvoicesInput,
+  ): Promise<ProviderInvoice[]> {
+    return this.subscriptionService.listCustomerInvoices(input);
+  }
+
+  listCustomerSubscriptions(
+    input: ListCustomerSubscriptionsInput,
+  ): Promise<Subscription[]> {
+    return this.subscriptionService.listCustomerSubscriptions(input);
+  }
+
+  listActiveSubscriptions(
+    customerId: string,
+    options?: Omit<ListCustomerSubscriptionsInput, "customerId" | "status">,
+  ): Promise<Subscription[]> {
+    return this.subscriptionService.listActiveSubscriptions(customerId, options);
+  }
+
+  listPaymentMethods(
+    input: ListPaymentMethodsInput,
+  ): Promise<CustomerPaymentMethod[]> {
+    return this.subscriptionService.listPaymentMethods(input);
+  }
+
+  detachPaymentMethod(
+    input: DetachPaymentMethodInput,
+  ): Promise<PaymentMethodResult> {
+    return this.subscriptionService.detachPaymentMethod(input);
+  }
+
+  createBillingPortalSession(
+    input: CreateBillingPortalSessionInput,
+  ): Promise<BillingPortalSession> {
+    return this.subscriptionService.createBillingPortalSession(input);
+  }
+
+  createPaymentMethodUpdateSession(
+    input: CreatePaymentMethodUpdateSessionInput,
+  ): Promise<BillingPortalSession> {
+    return this.subscriptionService.createPaymentMethodUpdateSession(input);
   }
 
   reportUsage(input: ReportUsageInput): Promise<UsageRecord> {

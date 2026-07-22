@@ -17,7 +17,13 @@ const subscriptionsCancel = jest.fn();
 const customersCreate = jest.fn();
 const customersUpdate = jest.fn();
 const paymentMethodsAttach = jest.fn();
+const paymentMethodsList = jest.fn();
+const paymentMethodsDetach = jest.fn();
 const invoicesRetrieve = jest.fn();
+const invoicesList = jest.fn();
+const subscriptionsList = jest.fn();
+const customersRetrieve = jest.fn();
+const billingPortalSessionsCreate = jest.fn();
 const createUsageRecord = jest.fn();
 
 jest.mock("stripe", () => {
@@ -34,10 +40,20 @@ jest.mock("stripe", () => {
           update: subscriptionsUpdate,
           retrieve: subscriptionsRetrieve,
           cancel: subscriptionsCancel,
+          list: subscriptionsList,
         },
-        customers: { create: customersCreate, update: customersUpdate },
-        paymentMethods: { attach: paymentMethodsAttach },
-        invoices: { retrieve: invoicesRetrieve },
+        customers: {
+          create: customersCreate,
+          update: customersUpdate,
+          retrieve: customersRetrieve,
+        },
+        paymentMethods: {
+          attach: paymentMethodsAttach,
+          list: paymentMethodsList,
+          detach: paymentMethodsDetach,
+        },
+        invoices: { retrieve: invoicesRetrieve, list: invoicesList },
+        billingPortal: { sessions: { create: billingPortalSessionsCreate } },
         subscriptionItems: { createUsageRecord },
         paymentIntents: {
           create: jest.fn(),
@@ -448,6 +464,174 @@ describe("Stripe customers and invoices", () => {
   });
 });
 
+describe("Stripe billing portal and self-serve helpers", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("creates a customer billing portal session", async () => {
+    billingPortalSessionsCreate.mockResolvedValue({
+      id: "bps_1",
+      url: "https://billing.stripe.com/p/session/test",
+      customer: "cus_1",
+      return_url: "https://app.example.com/account",
+      configuration: "bpc_1",
+      created: 1_700_000_000,
+    });
+
+    const session = await stripeBilling().createBillingPortalSession({
+      customerId: "cus_1",
+      returnUrl: "https://app.example.com/account",
+    });
+
+    expect(billingPortalSessionsCreate).toHaveBeenCalledWith({
+      customer: "cus_1",
+      return_url: "https://app.example.com/account",
+      configuration: undefined,
+      locale: undefined,
+    });
+    expect(session).toMatchObject({
+      id: "bps_1",
+      url: "https://billing.stripe.com/p/session/test",
+      customerId: "cus_1",
+      provider: "stripe",
+    });
+  });
+
+  it("creates a payment method update portal session", async () => {
+    billingPortalSessionsCreate.mockResolvedValue({
+      id: "bps_pm",
+      url: "https://billing.stripe.com/p/session/pm",
+      customer: "cus_1",
+      return_url: "https://app.example.com/billing",
+      configuration: null,
+      created: 1_700_000_000,
+    });
+
+    const session = await stripeBilling().createPaymentMethodUpdateSession({
+      customerId: "cus_1",
+      returnUrl: "https://app.example.com/billing",
+    });
+
+    expect(billingPortalSessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer: "cus_1",
+        return_url: "https://app.example.com/billing",
+        flow_data: {
+          type: "payment_method_update",
+          after_completion: {
+            type: "redirect",
+            redirect: { return_url: "https://app.example.com/billing" },
+          },
+        },
+      }),
+    );
+    expect(session.url).toContain("billing.stripe.com");
+  });
+
+  it("lists customer invoices", async () => {
+    invoicesList.mockResolvedValue({
+      data: [
+        {
+          id: "in_1",
+          customer: "cus_1",
+          status: "paid",
+          amount_due: 0,
+          amount_paid: 2900,
+          currency: "usd",
+          hosted_invoice_url: "https://invoice.stripe.com/i/1",
+          invoice_pdf: "https://pay.stripe.com/invoice/1/pdf",
+          subscription: "sub_1",
+          created: 1_700_000_000,
+        },
+      ],
+    });
+
+    const invoices = await stripeBilling().listCustomerInvoices({
+      customerId: "cus_1",
+      status: "paid",
+    });
+
+    expect(invoicesList).toHaveBeenCalledWith({
+      customer: "cus_1",
+      status: "paid",
+      limit: 20,
+      starting_after: undefined,
+    });
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0]).toMatchObject({
+      id: "in_1",
+      amountPaid: 2900,
+      hostedInvoiceUrl: "https://invoice.stripe.com/i/1",
+    });
+  });
+
+  it("lists active subscriptions for a customer", async () => {
+    subscriptionsList.mockResolvedValue({
+      data: [baseSubscription(), baseSubscription({ id: "sub_2" })],
+    });
+
+    const subscriptions = await stripeBilling().listActiveSubscriptions("cus_1");
+
+    expect(subscriptionsList).toHaveBeenCalledWith({
+      customer: "cus_1",
+      status: "active",
+      limit: 20,
+      starting_after: undefined,
+    });
+    expect(subscriptions.map((item) => item.id)).toEqual(["sub_1", "sub_2"]);
+    expect(subscriptions[0].status).toBe("active");
+  });
+
+  it("lists and detaches payment methods", async () => {
+    customersRetrieve.mockResolvedValue({
+      id: "cus_1",
+      deleted: undefined,
+      invoice_settings: { default_payment_method: "pm_1" },
+    });
+    paymentMethodsList.mockResolvedValue({
+      data: [
+        {
+          id: "pm_1",
+          type: "card",
+          card: { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2030 },
+        },
+        {
+          id: "pm_2",
+          type: "card",
+          card: { brand: "mastercard", last4: "4444", exp_month: 1, exp_year: 2029 },
+        },
+      ],
+    });
+    paymentMethodsDetach.mockResolvedValue({
+      id: "pm_2",
+      type: "card",
+      customer: null,
+    });
+
+    const methods = await stripeBilling().listPaymentMethods({
+      customerId: "cus_1",
+    });
+    expect(methods).toEqual([
+      expect.objectContaining({
+        id: "pm_1",
+        brand: "visa",
+        last4: "4242",
+        isDefault: true,
+      }),
+      expect.objectContaining({
+        id: "pm_2",
+        brand: "mastercard",
+        isDefault: false,
+      }),
+    ]);
+
+    const detached = await stripeBilling().detachPaymentMethod({
+      paymentMethodId: "pm_2",
+    });
+    expect(paymentMethodsDetach).toHaveBeenCalledWith("pm_2");
+    expect(detached.id).toBe("pm_2");
+  });
+});
+
 describe("Stripe error mapping", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -495,6 +679,12 @@ describe("Stripe helpers on other providers", () => {
 
     await expect(
       billing.createCustomer({ email: "a@b.com" }),
+    ).rejects.toBeInstanceOf(UnsupportedOperationError);
+    await expect(
+      billing.createBillingPortalSession({
+        customerId: "cus_1",
+        returnUrl: "https://app.example.com",
+      }),
     ).rejects.toBeInstanceOf(UnsupportedOperationError);
   });
 });

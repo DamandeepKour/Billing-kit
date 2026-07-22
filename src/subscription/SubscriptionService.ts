@@ -4,11 +4,21 @@ import type { CouponService } from "../coupon/CouponService";
 import type {
   AttachPaymentMethodInput,
   CreateProviderCustomerInput,
+  CustomerPaymentMethod,
+  DetachPaymentMethodInput,
+  ListCustomerInvoicesInput,
+  ListCustomerSubscriptionsInput,
+  ListPaymentMethodsInput,
   PaymentMethodResult,
   ProviderCustomer,
   ProviderInvoice,
   SetDefaultPaymentMethodInput,
 } from "../types/provider";
+import type {
+  BillingPortalSession,
+  CreateBillingPortalSessionInput,
+  CreatePaymentMethodUpdateSessionInput,
+} from "../types/billing-portal";
 import type {
   CreatePlanInput,
   CreateSubscriptionInput,
@@ -172,6 +182,53 @@ export class SubscriptionService {
 
   async retrieveProviderInvoice(invoiceId: string): Promise<ProviderInvoice> {
     return this.requireStripe().retrieveProviderInvoice(invoiceId);
+  }
+
+  async listCustomerInvoices(
+    input: ListCustomerInvoicesInput,
+  ): Promise<ProviderInvoice[]> {
+    return this.requireStripe().listCustomerInvoices(input);
+  }
+
+  async listCustomerSubscriptions(
+    input: ListCustomerSubscriptionsInput,
+  ): Promise<Subscription[]> {
+    return this.requireStripe().listCustomerSubscriptions(input);
+  }
+
+  async listActiveSubscriptions(
+    customerId: string,
+    options?: Omit<ListCustomerSubscriptionsInput, "customerId" | "status">,
+  ): Promise<Subscription[]> {
+    return this.listCustomerSubscriptions({
+      customerId,
+      status: "active",
+      ...options,
+    });
+  }
+
+  async listPaymentMethods(
+    input: ListPaymentMethodsInput,
+  ): Promise<CustomerPaymentMethod[]> {
+    return this.requireStripe().listPaymentMethods(input);
+  }
+
+  async detachPaymentMethod(
+    input: DetachPaymentMethodInput,
+  ): Promise<PaymentMethodResult> {
+    return this.requireStripe().detachPaymentMethod(input);
+  }
+
+  async createBillingPortalSession(
+    input: CreateBillingPortalSessionInput,
+  ): Promise<BillingPortalSession> {
+    return this.requireStripe().createBillingPortalSession(input);
+  }
+
+  async createPaymentMethodUpdateSession(
+    input: CreatePaymentMethodUpdateSessionInput,
+  ): Promise<BillingPortalSession> {
+    return this.requireStripe().createPaymentMethodUpdateSession(input);
   }
 
   async reportUsage(input: ReportUsageInput): Promise<UsageRecord> {
