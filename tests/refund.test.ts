@@ -1,31 +1,8 @@
 import { RefundService } from "../src/refund";
-import type { PaymentGateway } from "../src/interfaces/PaymentGateway";
+import { BillingValidationError } from "../src/utils/errors";
+import { createMockGateway } from "./helpers";
 
-function createMockGateway(
-  refundPayment: PaymentGateway["refundPayment"],
-): PaymentGateway {
-  return {
-    name: "mock",
-    createPayment: jest.fn(),
-    capturePayment: jest.fn(),
-    cancelPayment: jest.fn(),
-    getPaymentStatus: jest.fn(),
-    refundPayment,
-    createPlan: jest.fn(),
-    updatePlan: jest.fn(),
-    cancelPlan: jest.fn(),
-    createSubscription: jest.fn(),
-    cancelSubscription: jest.fn(),
-    scheduleCancellation: jest.fn(),
-    renewSubscription: jest.fn(),
-    pauseSubscription: jest.fn(),
-    resumeSubscription: jest.fn(),
-    retrieveSubscription: jest.fn(),
-    verifyWebhook: jest.fn(),
-  };
-}
-
-describe("RefundService", () => {
+describe("refund / happy path", () => {
   it("refunds full amount when amount is omitted", async () => {
     const refundPayment = jest.fn().mockResolvedValue({
       id: "re_full",
@@ -36,7 +13,7 @@ describe("RefundService", () => {
     });
 
     const result = await new RefundService(
-      createMockGateway(refundPayment),
+      createMockGateway({ refundPayment }),
     ).refundPayment({ paymentId: "pay_1" });
 
     expect(refundPayment).toHaveBeenCalledWith(
@@ -59,7 +36,7 @@ describe("RefundService", () => {
     });
 
     const result = await new RefundService(
-      createMockGateway(refundPayment),
+      createMockGateway({ refundPayment }),
     ).refundPayment({
       paymentId: "pay_1",
       amount: 25000,
@@ -77,36 +54,70 @@ describe("RefundService", () => {
     expect(result.amount).toBe(25000);
   });
 
-  it("propagates failed refund status", async () => {
+  it("allows explicit zero amount through to the gateway", async () => {
     const refundPayment = jest.fn().mockResolvedValue({
-      id: "re_fail",
+      id: "re_zero",
       paymentId: "pay_1",
-      amount: 1000,
-      status: "failed",
+      amount: 0,
+      status: "succeeded",
       provider: "mock",
     });
 
     const result = await new RefundService(
-      createMockGateway(refundPayment),
-    ).refundPayment({ paymentId: "pay_1", amount: 1000 });
+      createMockGateway({ refundPayment }),
+    ).refundPayment({ paymentId: "pay_1", amount: 0 });
 
-    expect(result.status).toBe("failed");
+    expect(refundPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 0 }),
+    );
+    expect(result.amount).toBe(0);
   });
+});
 
-  it("propagates pending refund status", async () => {
+describe("refund / status propagation", () => {
+  it.each([
+    ["failed", "re_fail"],
+    ["pending", "re_pending"],
+  ] as const)("propagates %s refund status", async (status, id) => {
     const refundPayment = jest.fn().mockResolvedValue({
-      id: "re_pending",
+      id,
       paymentId: "pay_1",
       amount: 1000,
-      status: "pending",
+      status,
       provider: "mock",
     });
 
     const result = await new RefundService(
-      createMockGateway(refundPayment),
+      createMockGateway({ refundPayment }),
     ).refundPayment({ paymentId: "pay_1", amount: 1000 });
 
-    expect(result.status).toBe("pending");
+    expect(result.status).toBe(status);
+  });
+});
+
+describe("refund / errors and edge cases", () => {
+  it("rejects negative refund amounts before calling the gateway", async () => {
+    const refundPayment = jest.fn();
+
+    await expect(
+      new RefundService(createMockGateway({ refundPayment })).refundPayment({
+        paymentId: "pay_1",
+        amount: -1,
+      }),
+    ).rejects.toThrow(BillingValidationError);
+
+    await expect(
+      new RefundService(createMockGateway({ refundPayment })).refundPayment({
+        paymentId: "pay_1",
+        amount: -500,
+      }),
+    ).rejects.toMatchObject({
+      name: "BillingValidationError",
+      code: "INVALID_REFUND_AMOUNT",
+      param: "amount",
+    });
+
+    expect(refundPayment).not.toHaveBeenCalled();
   });
 
   it("propagates gateway errors", async () => {
@@ -115,7 +126,7 @@ describe("RefundService", () => {
       .mockRejectedValue(new Error("insufficient funds"));
 
     await expect(
-      new RefundService(createMockGateway(refundPayment)).refundPayment({
+      new RefundService(createMockGateway({ refundPayment })).refundPayment({
         paymentId: "pay_1",
         amount: 1000,
       }),
@@ -131,7 +142,7 @@ describe("RefundService", () => {
       provider: "mock",
     });
 
-    await new RefundService(createMockGateway(refundPayment)).refundPayment({
+    await new RefundService(createMockGateway({ refundPayment })).refundPayment({
       paymentId: "pay_1",
       amount: 1000,
       idempotencyKey: "idem_123",

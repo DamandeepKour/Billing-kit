@@ -1,6 +1,7 @@
 import type { PaymentGateway } from "../interfaces/PaymentGateway";
 import type { IdempotencyRequestRepository } from "../interfaces/IdempotencyRequestRepository";
 import type { RefundPaymentInput, RefundResult } from "../types/payment";
+import { BillingValidationError } from "../utils/errors";
 import {
   executeIdempotentRequest,
   generateIdempotencyKey,
@@ -13,6 +14,13 @@ export class RefundService {
   ) {}
 
   async refundPayment(input: RefundPaymentInput): Promise<RefundResult> {
+    if (input.amount !== undefined && input.amount < 0) {
+      throw new BillingValidationError("Refund amount must be non-negative", {
+        code: "INVALID_REFUND_AMOUNT",
+        param: "amount",
+      });
+    }
+
     if (!this.idempotencyRequests) {
       const key = input.idempotencyKey?.trim() || generateIdempotencyKey();
       const result = await this.gateway.refundPayment({

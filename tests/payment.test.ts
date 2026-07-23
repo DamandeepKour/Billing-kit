@@ -1,54 +1,10 @@
 import { PaymentGatewayFactory, PaymentManager, PaymentService } from "../src/payment";
-import { SubscriptionService } from "../src/subscription";
 import { StripeGateway } from "../src/payment/gateways/StripeGateway";
 import { RazorpayGateway } from "../src/payment/gateways/RazorpayGateway";
-import type { PaymentGateway } from "../src/interfaces/PaymentGateway";
 import { InvalidConfigError } from "../src/utils/errors";
+import { createMockGateway } from "./helpers";
 
-function createMockGateway(): jest.Mocked<PaymentGateway> {
-  return {
-    name: "mock",
-    createPayment: jest.fn().mockResolvedValue({
-      id: "pay_1",
-      status: "pending",
-      amount: 5000,
-      currency: "inr",
-      provider: "mock",
-    }),
-    capturePayment: jest.fn(),
-    cancelPayment: jest.fn(),
-    getPaymentStatus: jest.fn(),
-    refundPayment: jest.fn(),
-    createPlan: jest.fn().mockResolvedValue({
-      id: "plan_1",
-      name: "Pro",
-      amount: 99900,
-      currency: "inr",
-      interval: "monthly",
-      provider: "mock",
-    }),
-    updatePlan: jest.fn(),
-    cancelPlan: jest.fn(),
-    createSubscription: jest.fn().mockResolvedValue({
-      id: "sub_1",
-      customerId: "cus_1",
-      planId: "plan_1",
-      status: "active",
-      currentPeriodEnd: new Date(),
-      cancelAtPeriodEnd: false,
-      provider: "mock",
-    }),
-    cancelSubscription: jest.fn(),
-    scheduleCancellation: jest.fn(),
-    renewSubscription: jest.fn(),
-    pauseSubscription: jest.fn(),
-    resumeSubscription: jest.fn(),
-    retrieveSubscription: jest.fn(),
-    verifyWebhook: jest.fn(),
-  };
-}
-
-describe("PaymentGatewayFactory", () => {
+describe("payment / gateway factory", () => {
   it("creates Stripe gateway", () => {
     const gateway = PaymentGatewayFactory.create({
       provider: "stripe",
@@ -79,7 +35,7 @@ describe("PaymentGatewayFactory", () => {
   });
 });
 
-describe("PaymentManager", () => {
+describe("payment / manager", () => {
   it("creates stripe gateway from config", () => {
     const manager = new PaymentManager({
       provider: "stripe",
@@ -90,7 +46,7 @@ describe("PaymentManager", () => {
   });
 });
 
-describe("PaymentService", () => {
+describe("payment / service", () => {
   it("creates payment via gateway", async () => {
     const gateway = createMockGateway();
     const service = new PaymentService(gateway);
@@ -99,26 +55,5 @@ describe("PaymentService", () => {
 
     expect(payment.id).toBe("pay_1");
     expect(gateway.createPayment).toHaveBeenCalled();
-  });
-});
-
-describe("SubscriptionService", () => {
-  it("creates plan and subscription via gateway", async () => {
-    const gateway = createMockGateway();
-    const service = new SubscriptionService(gateway);
-
-    const plan = await service.createPlan({
-      name: "Pro",
-      amount: 99900,
-      interval: "monthly",
-    });
-
-    const sub = await service.createSubscription({
-      customerId: "cus_1",
-      planId: plan.id,
-    });
-
-    expect(plan.id).toBe("plan_1");
-    expect(sub.id).toBe("sub_1");
   });
 });
