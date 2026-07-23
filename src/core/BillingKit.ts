@@ -149,12 +149,12 @@ import { SubscriptionService } from "../subscription";
 import { TaxService } from "../tax";
 import { TransactionService } from "../transaction";
 import { UsageBillingService } from "../usage";
-import { InvalidConfigError } from "../utils/errors";
 import {
   NoopLogger,
   ObservabilityService,
 } from "../observability";
 import type { OperationObservability } from "../types/observability";
+import { validateBillingKitConfig } from "../utils/validate-config";
 import { WebhookService } from "../webhook";
 
 export class BillingKit {
@@ -178,16 +178,7 @@ export class BillingKit {
   private readonly observability: ObservabilityService;
 
   constructor(config: BillingKitConfig) {
-    if (!config.secretKey) {
-      throw new InvalidConfigError("secretKey is required");
-    }
-    if (config.provider === "razorpay" && !config.keyId) {
-      throw new InvalidConfigError("keyId is required for Razorpay");
-    }
-    this.config = {
-      currency: "inr",
-      ...config,
-    };
+    this.config = validateBillingKitConfig(config);
     const invoiceRepository =
       this.config.invoiceRepository ?? new InMemoryInvoiceRepository();
     const transactionRepository =

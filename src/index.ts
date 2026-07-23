@@ -272,6 +272,22 @@ export {
   toMinorUnits,
 } from "./utils/currency";
 export type { SupportedCurrency } from "./utils/currency";
+export {
+  assertNonEmptyString,
+  validateBillingKitConfig,
+  validateCompanyConfig,
+  validateCurrencyConfig,
+  validateProvider,
+  validateRazorpayConfig,
+  validateRazorpayKeyId,
+  validateRazorpaySecretKey,
+  validateRetryConfig,
+  validateStripeConfig,
+  validateStripeSecretKey,
+  validateTaxConfig,
+  validateWebhookSecret,
+} from "./utils/validate-config";
+export type { ValidatedBillingKitConfig } from "./utils/validate-config";
 export { calculateFeeBreakdown, normalizeSettlementFields } from "./utils/settlement";
 export {
   calculatePlatformFee,

@@ -68,9 +68,15 @@ export class BillingRetryableError extends BillingKitError {
 }
 
 export class InvalidConfigError extends BillingKitError {
-  constructor(message: string, context?: BillingErrorContext) {
+  readonly param?: string;
+
+  constructor(
+    message: string,
+    context?: BillingErrorContext & { param?: string | null },
+  ) {
     super(message, "INVALID_CONFIG", context);
     this.name = "InvalidConfigError";
+    this.param = context?.param ?? undefined;
   }
 }
 export class PaymentError extends BillingKitError {
