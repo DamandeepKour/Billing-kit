@@ -1,7 +1,35 @@
 {
   "name": "billing-kit",
   "version": "1.0.0",
-  "description": "Billing SDK for invoices, tax, Stripe, Razorpay, and webhooks",
+  "description": "Framework-agnostic Node.js billing SDK for invoices, tax (GST/VAT), Stripe and Razorpay payments, subscriptions, webhooks, and PDFs",
+  "author": "Damandeep <daman1901319@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/DamandeepKour/Billing-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DamandeepKour/Billing-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DamandeepKour/Billing-kit/issues"
+  },
+  "keywords": [
+    "billing",
+    "invoice",
+    "invoicing",
+    "gst",
+    "vat",
+    "tax",
+    "stripe",
+    "razorpay",
+    "payments",
+    "subscriptions",
+    "refunds",
+    "webhooks",
+    "pdf",
+    "sdk",
+    "typescript",
+    "nodejs"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -9,15 +37,36 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "import": "./dist/testing/index.mjs",
-      "require": "./dist/testing/index.js"
+      "require": "./dist/testing/index.js",
+      "default": "./dist/testing/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "testing": [
+        "./dist/testing/index.d.ts"
+      ]
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup src/index.ts src/testing/index.ts --format cjs,esm --dts --clean",
     "test": "jest",
@@ -25,19 +74,6 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "prepublishOnly": "npm run build && npm test"
   },
-  "engines": { "node": ">=18" },
-  "keywords": [
-    "billing",
-    "invoice",
-    "gst",
-    "vat",
-    "stripe",
-    "razorpay",
-    "payments",
-    "webhooks",
-    "pdf"
-  ],
-  "license": "MIT",
   "dependencies": {
     "pdfkit": "^0.16.0",
     "razorpay": "^2.9.6",
