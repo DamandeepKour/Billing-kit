@@ -31,6 +31,16 @@ export interface RazorpaySubscriptionEntityOverrides {
   created_at?: number;
 }
 
+export interface RazorpayInvoiceEntityOverrides {
+  id?: string;
+  payment_id?: string;
+  subscription_id?: string;
+  amount?: number;
+  currency?: string;
+  status?: string;
+  created_at?: number;
+}
+
 export interface StripeObjectOverrides {
   id?: string;
   amount?: number;
@@ -146,6 +156,29 @@ export function createMockRazorpaySubscription(
           plan_id: overrides.plan_id ?? "plan_test_1",
           status,
           current_end: overrides.current_end ?? createdAt + 30 * 24 * 60 * 60,
+          created_at: createdAt,
+        },
+      },
+    },
+  });
+}
+
+export function createMockRazorpayInvoicePaid(
+  overrides: RazorpayInvoiceEntityOverrides = {},
+): MockWebhookPayload {
+  const createdAt = overrides.created_at ?? unixNow();
+  return asPayload({
+    event: "invoice.paid",
+    created_at: createdAt,
+    payload: {
+      invoice: {
+        entity: {
+          id: overrides.id ?? "inv_test_1",
+          payment_id: overrides.payment_id ?? "pay_test_captured",
+          subscription_id: overrides.subscription_id ?? "sub_test_1",
+          amount: overrides.amount ?? 99900,
+          currency: overrides.currency ?? "INR",
+          status: overrides.status ?? "paid",
           created_at: createdAt,
         },
       },
@@ -279,6 +312,7 @@ export const webhookFixtures = {
     paymentFailed: createMockRazorpayPaymentFailed,
     refundProcessed: createMockRazorpayRefundProcessed,
     subscription: createMockRazorpaySubscription,
+    invoicePaid: createMockRazorpayInvoicePaid,
   },
   stripe: {
     event: createMockStripeEvent,

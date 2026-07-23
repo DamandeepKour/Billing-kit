@@ -15,12 +15,15 @@ export function createSignedRazorpayWebhookRequest(input: {
   secret: string;
   eventId?: string;
   receivedAt?: Date;
+  /** When true, `rawBody` is a Buffer (Express `express.raw()` style). */
+  asBuffer?: boolean;
 }): SignedWebhookRequest {
-  const rawBody =
+  const source =
     typeof input.payload === "string" || Buffer.isBuffer(input.payload)
       ? input.payload
       : input.payload.body;
-  const body = typeof rawBody === "string" ? rawBody : rawBody.toString("utf8");
+  const body = typeof source === "string" ? source : source.toString("utf8");
+  const rawBody: string | Buffer = input.asBuffer ? Buffer.from(body, "utf8") : source;
   const signature = generateRazorpayWebhookSignature(rawBody, input.secret);
   return {
     rawBody,
@@ -44,14 +47,19 @@ export function createSignedStripeWebhookRequest(input: {
   eventId?: string;
   receivedAt?: Date;
   timestamp?: number;
+  /** When true, `rawBody` is a Buffer (Express `express.raw()` style). */
+  asBuffer?: boolean;
 }): SignedWebhookRequest {
   const body =
     typeof input.payload === "string" ? input.payload : input.payload.body;
   const signature = generateStripeWebhookSignature(body, input.secret, {
     timestamp: input.timestamp,
   });
+  const rawBody: string | Buffer = input.asBuffer
+    ? Buffer.from(body, "utf8")
+    : body;
   return {
-    rawBody: body,
+    rawBody,
     body,
     signature,
     eventId: input.eventId,
@@ -70,6 +78,7 @@ export function createSignedWebhookRequest(input: {
   eventId?: string;
   receivedAt?: Date;
   timestamp?: number;
+  asBuffer?: boolean;
 }): SignedWebhookRequest {
   if (input.provider === "razorpay") {
     return createSignedRazorpayWebhookRequest(input);

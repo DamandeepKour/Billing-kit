@@ -1,4 +1,5 @@
 export {
+  createMockRazorpayInvoicePaid,
   createMockRazorpayPaymentCaptured,
   createMockRazorpayPaymentFailed,
   createMockRazorpayRefundProcessed,
@@ -13,6 +14,7 @@ export {
 } from "./fixtures";
 export type {
   MockWebhookPayload,
+  RazorpayInvoiceEntityOverrides,
   RazorpayPaymentEntityOverrides,
   RazorpayRefundEntityOverrides,
   RazorpaySubscriptionEntityOverrides,
