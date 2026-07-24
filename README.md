@@ -11,7 +11,6 @@ Requires **Node.js 18+**. TypeScript types are included.
 ---
 
 ## Features
-
 - **Invoices** — line items, discounts, tax, numbering, PDF export
 - **Payments** — create, capture, cancel, status (Stripe PaymentIntents / Razorpay Orders)
 - **Refunds** — full and partial, with optional idempotency keys
