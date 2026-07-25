@@ -8,6 +8,8 @@ npm install billing-kit
 
 Requires **Node.js 18+**. TypeScript types are included.
 
+See [CHANGELOG.md](./CHANGELOG.md) for release history and [PUBLISHING.md](./PUBLISHING.md) for the maintainer release flow.
+
 ---
 
 ## Features
@@ -776,6 +778,8 @@ npm run format      # prettier
 GitHub Actions runs the same checks on Node 18 / 20 / 22 for every push and pull request.
 
 `prepublishOnly` runs `build` + `test` before `npm publish`.
+
+For maintainers: see **[PUBLISHING.md](./PUBLISHING.md)** (versioning, changelog, release checklist) and **[CHANGELOG.md](./CHANGELOG.md)**.
 
 ---
 
