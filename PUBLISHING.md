@@ -49,14 +49,15 @@ Write entries for **users of the library** (what changed and why it matters), no
 ```bash
 git checkout main
 git pull
-npm run ci          # lint + typecheck + test + build
-npm publish --dry-run
+npm run ci              # lint + typecheck + test + build + pack validation
+npm publish --dry-run   # runs prepublishOnly + prepack hooks
 ```
 
 Confirm:
 
 - [ ] CI is green on `main`
 - [ ] `CHANGELOG.md` lists the upcoming version
+- [ ] `npm run validate:pack` passes
 - [ ] No secrets in the package (`npm pack --dry-run` / inspect tarball)
 - [ ] You are logged into npm (`npm whoami`) with publish rights
 
@@ -87,7 +88,7 @@ Tag format: **`vX.Y.Z`** (leading `v`).
 npm publish
 ```
 
-`prepublishOnly` runs `build` + `test` automatically.
+`prepublishOnly` runs lint, typecheck, and tests. `prepack` rebuilds and validates package contents (README, LICENSE, CHANGELOG, dist entrypoints, CJS/ESM load). Use `npm run validate:pack` to also inspect the npm tarball.
 
 The package is public (`publishConfig.access: "public"`). Published files are whatever `package.json` → `files` allows (`dist`, `README.md`, `LICENSE`, `CHANGELOG.md`).
 
@@ -118,8 +119,10 @@ npm install billing-kit@X.Y.Z   # in a scratch project
 
 ```bash
 npm run build
-npm pack --dry-run    # list files that would be published
-npm publish --dry-run # simulate publish without uploading
+npm run validate:package   # docs + dist + exports + smoke load
+npm run validate:pack      # above + npm pack tarball contents
+npm pack --dry-run         # list files that would be published
+npm publish --dry-run      # simulate publish (runs lifecycle hooks)
 ```
 
 ---
@@ -149,6 +152,7 @@ Do not force-unpublish except in rare security cases (npm policy applies).
 [ ] CI green on main
 [ ] CHANGELOG.md updated for X.Y.Z
 [ ] Version bumped (package.json + git tag vX.Y.Z)
+[ ] npm run validate:pack passes
 [ ] npm publish --dry-run looks correct
 [ ] npm publish succeeded
 [ ] git push --follow-tags

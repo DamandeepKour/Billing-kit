@@ -33,6 +33,7 @@ Initial public release of **billing-kit**.
 - Observability hooks, structured errors, and config validation at startup
 - Dual package entrypoints: `billing-kit` and `billing-kit/testing`
 - CI for lint, typecheck, test, and package build (Node 18 / 20 / 22)
+- Prepublish / prepack package validation (`validate:package`, `validate:pack`)
 
 [Unreleased]: https://github.com/DamandeepKour/Billing-kit/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/DamandeepKour/Billing-kit/releases/tag/v1.0.0

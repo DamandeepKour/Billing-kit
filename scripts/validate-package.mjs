@@ -1,0 +1,287 @@
+#!/usr/bin/env node
+/**
+ * Validates billing-kit is ready to pack/publish:
+ * - required docs (README, LICENSE, CHANGELOG)
+ * - package.json entrypoints / exports / files
+ * - built dist artifacts + types
+ * - CJS/ESM smoke load
+ * - optional tarball content check (`--pack`)
+ */
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+const wantPack = process.argv.includes("--pack");
+const inPrepack = process.env.npm_lifecycle_event === "prepack";
+
+const errors = [];
+
+function fail(message) {
+  errors.push(message);
+}
+
+function ok(message) {
+  console.log(`  ✓ ${message}`);
+}
+
+function mustExist(relativePath, label = relativePath) {
+  const absolute = join(root, relativePath);
+  if (!existsSync(absolute)) {
+    fail(`Missing ${label} (${relativePath})`);
+    return false;
+  }
+  ok(label);
+  return true;
+}
+
+function readPackageJson() {
+  return JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+}
+
+function validatePackageJson(pkg) {
+  const requiredFields = [
+    "name",
+    "version",
+    "description",
+    "license",
+    "main",
+    "module",
+    "types",
+    "exports",
+    "files",
+    "engines",
+    "publishConfig",
+  ];
+
+  for (const field of requiredFields) {
+    if (pkg[field] == null) {
+      fail(`package.json missing required field: ${field}`);
+    }
+  }
+
+  if (pkg.license !== "MIT") {
+    fail(`Expected license "MIT", got ${JSON.stringify(pkg.license)}`);
+  }
+
+  if (pkg.publishConfig?.access !== "public") {
+    fail('publishConfig.access must be "public"');
+  }
+
+  if (!pkg.engines?.node) {
+    fail("package.json engines.node is required");
+  }
+
+  const requiredFiles = ["dist", "README.md", "LICENSE", "CHANGELOG.md"];
+  for (const entry of requiredFiles) {
+    if (!Array.isArray(pkg.files) || !pkg.files.includes(entry)) {
+      fail(`package.json files[] must include "${entry}"`);
+    }
+  }
+
+  if (!pkg.exports?.["."]?.types || !pkg.exports?.["."]?.import || !pkg.exports?.["."]?.require) {
+    fail('exports["."] must define types, import, and require');
+  }
+
+  if (
+    !pkg.exports?.["./testing"]?.types ||
+    !pkg.exports?.["./testing"]?.import ||
+    !pkg.exports?.["./testing"]?.require
+  ) {
+    fail('exports["./testing"] must define types, import, and require');
+  }
+
+  if (errors.length === 0) {
+    ok("package.json metadata and exports");
+  }
+}
+
+function stripLeadingDot(path) {
+  return path.replace(/^\.\//, "");
+}
+
+function validateEntrypoints(pkg) {
+  const paths = [
+    pkg.main,
+    pkg.module,
+    pkg.types,
+    pkg.exports["."].require,
+    pkg.exports["."].import,
+    pkg.exports["."].types,
+    pkg.exports["./testing"].require,
+    pkg.exports["./testing"].import,
+    pkg.exports["./testing"].types,
+  ]
+    .filter(Boolean)
+    .map(stripLeadingDot);
+
+  for (const relative of new Set(paths)) {
+    mustExist(relative, `entrypoint ${relative}`);
+  }
+
+  // Extra dual-package / testing artifacts commonly expected by consumers
+  for (const relative of [
+    "dist/index.d.mts",
+    "dist/testing/index.d.mts",
+  ]) {
+    mustExist(relative);
+  }
+}
+
+function validateDocs() {
+  mustExist("README.md");
+  mustExist("LICENSE");
+  mustExist("CHANGELOG.md");
+
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  if (!readme.includes("billing-kit") || readme.trim().length < 200) {
+    fail("README.md looks empty or missing package name");
+  } else {
+    ok("README.md content");
+  }
+
+  const license = readFileSync(join(root, "LICENSE"), "utf8");
+  if (!/MIT/i.test(license)) {
+    fail("LICENSE does not appear to be MIT");
+  } else {
+    ok("LICENSE is MIT");
+  }
+
+  const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
+  if (!changelog.includes("## [") && !changelog.includes("## [Unreleased]")) {
+    fail("CHANGELOG.md missing Keep a Changelog sections");
+  } else {
+    ok("CHANGELOG.md sections");
+  }
+}
+
+async function smokeLoad() {
+  try {
+    require(join(root, "dist/index.js"));
+    require(join(root, "dist/testing/index.js"));
+    ok("CJS require(dist)");
+  } catch (error) {
+    fail(`CJS require failed: ${error instanceof Error ? error.message : error}`);
+  }
+
+  try {
+    await import(pathToFileURL(join(root, "dist/index.mjs")).href);
+    await import(pathToFileURL(join(root, "dist/testing/index.mjs")).href);
+    ok("ESM import(dist)");
+  } catch (error) {
+    fail(`ESM import failed: ${error instanceof Error ? error.message : error}`);
+  }
+}
+
+function validateTarballContents(pkg) {
+  const dir = mkdtempSync(join(tmpdir(), "billing-kit-pack-"));
+  try {
+    const packed = execFileSync(
+      "npm",
+      ["pack", "--ignore-scripts", "--pack-destination", dir, "--json"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    const [meta] = JSON.parse(packed);
+    const tarball = join(dir, meta.filename);
+    if (!existsSync(tarball)) {
+      fail(`npm pack did not produce ${meta.filename}`);
+      return;
+    }
+
+    const listing = execFileSync("tar", ["-tzf", tarball], {
+      encoding: "utf8",
+    });
+    const entries = new Set(
+      listing
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => line.replace(/^package\//, "")),
+    );
+
+    const requiredInTarball = [
+      "package.json",
+      "README.md",
+      "LICENSE",
+      "CHANGELOG.md",
+      stripLeadingDot(pkg.main),
+      stripLeadingDot(pkg.module),
+      stripLeadingDot(pkg.types),
+      stripLeadingDot(pkg.exports["./testing"].require),
+      stripLeadingDot(pkg.exports["./testing"].import),
+      stripLeadingDot(pkg.exports["./testing"].types),
+    ];
+
+    for (const entry of requiredInTarball) {
+      if (!entries.has(entry)) {
+        fail(`tarball missing ${entry}`);
+      }
+    }
+
+    for (const entry of entries) {
+      if (
+        entry.startsWith("src/") ||
+        entry.startsWith("tests/") ||
+        entry.startsWith("examples/") ||
+        entry.startsWith(".github/")
+      ) {
+        fail(`tarball must not include ${entry}`);
+      }
+    }
+
+    if (!errors.some((message) => message.includes("tarball"))) {
+      ok(`npm pack tarball contains required files (${entries.size} entries)`);
+    }  } catch (error) {
+    fail(
+      `npm pack validation failed: ${
+        error instanceof Error ? error.message : error
+      }`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function main() {
+  console.log("Validating npm package…");
+  const pkg = readPackageJson();
+
+  validateDocs();
+  validatePackageJson(pkg);
+  validateEntrypoints(pkg);
+  await smokeLoad();
+
+  if (wantPack) {
+    if (inPrepack) {
+      console.log(
+        "  • skipping nested npm pack during prepack (use npm run validate:pack)",
+      );
+    } else {
+      validateTarballContents(pkg);
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error("\nPackage validation failed:");
+    for (const error of errors) {
+      console.error(`  ✗ ${error}`);
+    }
+    process.exit(1);
+  }
+
+  console.log("\nPackage validation passed.");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

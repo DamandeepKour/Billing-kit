@@ -767,17 +767,22 @@ Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookReq
 
 ```bash
 npm install
-npm run lint        # eslint
-npm run typecheck   # tsc --noEmit
-npm test            # jest
-npm run build       # tsup → dist (CJS + ESM + .d.ts)
-npm run ci          # lint + typecheck + test + build
-npm run format      # prettier
+npm run lint              # eslint
+npm run typecheck         # tsc --noEmit
+npm test                  # jest
+npm run build             # tsup → dist (CJS + ESM + .d.ts)
+npm run validate:package  # docs + dist entrypoints + smoke load
+npm run validate:pack     # validate:package + npm tarball contents
+npm run ci                # lint + typecheck + test + build + validate:pack
+npm run format            # prettier
 ```
 
 GitHub Actions runs the same checks on Node 18 / 20 / 22 for every push and pull request.
 
-`prepublishOnly` runs `build` + `test` before `npm publish`.
+Lifecycle hooks:
+
+- `prepublishOnly` — lint, typecheck, test (before `npm publish`)
+- `prepack` — build + `validate:package` (before `npm pack` / publish tarball)
 
 For maintainers: see **[PUBLISHING.md](./PUBLISHING.md)** (versioning, changelog, release checklist) and **[CHANGELOG.md](./CHANGELOG.md)**.
 

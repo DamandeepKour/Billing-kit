@@ -74,8 +74,11 @@
     "test": "jest",
     "lint": "eslint src tests --ext .ts",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "ci": "npm run lint && npm run typecheck && npm test && npm run build",
-    "prepublishOnly": "npm run build && npm test"
+    "validate:package": "node scripts/validate-package.mjs",
+    "validate:pack": "node scripts/validate-package.mjs --pack",
+    "prepack": "npm run build && npm run validate:package",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test",
+    "ci": "npm run lint && npm run typecheck && npm test && npm run build && npm run validate:pack"
   },
   "dependencies": {
     "pdfkit": "^0.16.0",
