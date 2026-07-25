@@ -765,11 +765,15 @@ Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookReq
 
 ```bash
 npm install
-npm run build    # tsup → dist (CJS + ESM + .d.ts)
-npm test         # jest
-npm run lint     # eslint
-npm run format   # prettier
+npm run lint        # eslint
+npm run typecheck   # tsc --noEmit
+npm test            # jest
+npm run build       # tsup → dist (CJS + ESM + .d.ts)
+npm run ci          # lint + typecheck + test + build
+npm run format      # prettier
 ```
+
+GitHub Actions runs the same checks on Node 18 / 20 / 22 for every push and pull request.
 
 `prepublishOnly` runs `build` + `test` before `npm publish`.
 
