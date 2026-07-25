@@ -8,7 +8,7 @@ npm install billing-kit
 
 Requires **Node.js 18+**. TypeScript types are included.
 
-See [CHANGELOG.md](./CHANGELOG.md) for release history and [PUBLISHING.md](./PUBLISHING.md) for the maintainer release flow.
+See [CHANGELOG.md](./CHANGELOG.md) for release history, [PUBLISHING.md](./PUBLISHING.md) for the maintainer release flow, and [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) for the v1.0.0 first-stable checklist.
 
 ---
 
@@ -784,7 +784,7 @@ Lifecycle hooks:
 - `prepublishOnly` — lint, typecheck, test (before `npm publish`)
 - `prepack` — build + `validate:package` (before `npm pack` / publish tarball)
 
-For maintainers: see **[PUBLISHING.md](./PUBLISHING.md)** (versioning, changelog, release checklist) and **[CHANGELOG.md](./CHANGELOG.md)**.
+For maintainers: see **[PUBLISHING.md](./PUBLISHING.md)** (versioning + release flow), **[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)** (v1.0.0 first stable), and **[CHANGELOG.md](./CHANGELOG.md)**.
 
 ---
 

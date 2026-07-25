@@ -159,3 +159,8 @@ Do not force-unpublish except in rare security cases (npm policy applies).
 [ ] GitHub Release created
 [ ] npm view billing-kit version matches
 ```
+
+### First stable release (`1.0.0`)
+
+Use the filled checklist in **[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)**.  
+Prep items are marked complete; publish steps stay unchecked until you intentionally run `npm publish`.
