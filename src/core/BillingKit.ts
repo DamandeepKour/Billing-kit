@@ -155,7 +155,16 @@ import {
 } from "../observability";
 import type { OperationObservability } from "../types/observability";
 import { validateBillingKitConfig } from "../utils/validate-config";
-import { WebhookService } from "../webhook";
+import {
+  createWebhookHttpHandler,
+  parseWebhookRequest,
+  parseWebhookRequestFromHttp,
+  WebhookService,
+  type CreateWebhookHttpHandlerOptions,
+  type ExpressLikeResponse,
+  type WebhookHeaderMap,
+  type WebhookHttpRequestLike,
+} from "../webhook";
 
 export class BillingKit {
   private readonly config: BillingKitConfig;
@@ -1059,6 +1068,62 @@ export class BillingKit {
     handler: WebhookEventHandler,
   ): (request: RawWebhookRequest) => Promise<ProcessWebhookResult> {
     return (request) => this.processWebhook(request, handler);
+  }
+
+  /**
+   * Build a `RawWebhookRequest` from an HTTP request (raw body + signature headers).
+   * Pulls Razorpay `X-Razorpay-Event-Id` automatically for duplicate protection.
+   */
+  parseWebhookRequest(input: {
+    rawBody: unknown;
+    headers: WebhookHeaderMap;
+    eventId?: string;
+    receivedAt?: Date;
+  }): RawWebhookRequest {
+    return parseWebhookRequest({
+      provider: this.config.provider,
+      rawBody: input.rawBody,
+      headers: input.headers,
+      eventId: input.eventId,
+      receivedAt: input.receivedAt,
+    });
+  }
+
+  /**
+   * Express/Connect-compatible webhook handler:
+   * verify signature → normalize → dedupe by event id → run handler.
+   *
+   * Pair with `createRawBodyMiddleware()` or `express.raw({ type: "application/json" })`.
+   */
+  createWebhookHttpHandler(
+    handler: WebhookEventHandler,
+    options?: Omit<
+      CreateWebhookHttpHandlerOptions,
+      "provider" | "processWebhook" | "handler"
+    >,
+  ): (
+    req: WebhookHttpRequestLike,
+    res: ExpressLikeResponse,
+  ) => Promise<void> {
+    return createWebhookHttpHandler({
+      provider: this.config.provider,
+      processWebhook: (request, eventHandler) =>
+        this.processWebhook(request, eventHandler),
+      handler,
+      ...options,
+    });
+  }
+
+  /** Process a webhook from an HTTP-like request object. */
+  processWebhookFromHttp(
+    request: WebhookHttpRequestLike,
+    handler: WebhookEventHandler,
+    options?: { eventId?: string; receivedAt?: Date },
+  ): Promise<ProcessWebhookResult> {
+    return this.processWebhook(
+      parseWebhookRequestFromHttp(this.config.provider, request, options),
+      handler,
+    );
   }
 
   listWebhookEvents(): Promise<WebhookEventRecord[]> {

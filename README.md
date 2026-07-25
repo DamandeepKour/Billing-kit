@@ -362,57 +362,96 @@ Currency resolution order:
 ## Webhook example
 
 Always verify signatures against the **raw request body** (not a re-serialized JSON object).
+`processWebhook` / `createWebhookHttpHandler` also **dedupe by event id** so duplicate provider deliveries are safe no-ops.
+
+### Express (recommended)
 
 ```typescript
-import { BillingKit } from "billing-kit";
+import {
+  BillingKit,
+  createRawBodyMiddleware,
+  EXPRESS_WEBHOOK_RAW_BODY,
+} from "billing-kit";
 import express from "express";
 
 const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
   webhookSecret: process.env.STRIPE_WEBHOOK_SECRET!,
+  // Optional: persist claims in Redis/Postgres for multi-instance dedupe
+  // webhookEventRepository: new RedisWebhookEventRepository(),
 });
 
 const app = express();
 
+// Option A — SDK middleware (buffers req.rawBody / req.body as Buffer)
 app.post(
   "/webhooks/stripe",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      const result = await billing.processWebhook(
-        {
-          rawBody: req.body,
-          signature: req.headers["stripe-signature"] as string,
-        },
-        async (event) => {
-          switch (event.normalizedType) {
-            case "payment.succeeded":
-              // fulfill order — event.entity.id
-              break;
-            case "payment.failed":
-              // notify customer
-              break;
-            case "subscription.activated":
-              // provision access
-              break;
-          }
-        },
-      );
-
-      // Duplicates / out-of-order deliveries are safe no-ops
-      if (result.duplicate) {
-        res.status(200).json({ ok: true, duplicate: true });
-        return;
-      }
-
-      res.status(200).json({ ok: true });
-    } catch (err) {
-      console.error(err);
-      res.status(400).send("Webhook Error");
+  createRawBodyMiddleware(),
+  billing.createWebhookHttpHandler(async (event) => {
+    switch (event.normalizedType) {
+      case "payment.captured":
+        // fulfill order — event.entity.id
+        break;
+      case "payment.failed":
+        // notify customer
+        break;
+      case "subscription.activated":
+        // provision access
+        break;
+      case "refund.processed":
+        // update refund state
+        break;
     }
+  }),
+);
+
+// Option B — express.raw (same raw-body requirement)
+app.post(
+  "/webhooks/razorpay",
+  express.raw(EXPRESS_WEBHOOK_RAW_BODY),
+  async (req, res) => {
+    const result = await billing.processWebhookFromHttp(req, async (event) => {
+      // event.normalizedType is the internal enum
+    });
+    if (result.duplicate) {
+      res.status(200).json({ ok: true, duplicate: true });
+      return;
+    }
+    res.status(200).json({ ok: true });
   },
 );
+```
+
+Duplicate protection keys:
+
+| Provider | Event id source |
+|----------|-----------------|
+| Stripe | Verified payload `event.id` |
+| Razorpay | `X-Razorpay-Event-Id` header, else SHA-256 body fingerprint |
+
+Failed handler runs are **reclaimable** (provider retries can succeed). Out-of-order resource events are marked `ignored`.
+
+### Helpers
+
+```typescript
+import {
+  ensureRawWebhookBody,
+  parseWebhookRequest,
+  normalizeStripeWebhook,
+  normalizeRazorpayWebhook,
+} from "billing-kit";
+
+// Reject JSON-parsed bodies early
+ensureRawWebhookBody(req.body);
+
+// Headers → RawWebhookRequest (signature + Razorpay event id)
+const request = billing.parseWebhookRequest({
+  rawBody: req.body,
+  headers: req.headers,
+});
+
+const result = await billing.processWebhook(request, handler);
 ```
 
 Verify-only (no handler / persistence):
@@ -689,8 +728,13 @@ formatAmount(99900, "inr"); // "₹999.00"
 |--------|-------------|
 | `verifyWebhook(rawBody, signature)` | Verify + normalize |
 | `processWebhook(request, handler)` | Verify, dedupe, handle |
-| `createRawWebhookHandler(handler)` | Express-style adapter |
+| `processWebhookFromHttp(req, handler)` | Parse headers/raw body, then process |
+| `parseWebhookRequest({ rawBody, headers })` | Build `RawWebhookRequest` |
+| `createWebhookHttpHandler(handler)` | Express-style HTTP adapter |
+| `createRawWebhookHandler(handler)` | `(RawWebhookRequest) => processWebhook` |
 | `listWebhookEvents()` | Persisted webhook records |
+
+Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookRequest()`, `normalizeStripeWebhook()` / `normalizeRazorpayWebhook()`, `EXPRESS_WEBHOOK_RAW_BODY`.
 
 ### Stripe billing helpers
 

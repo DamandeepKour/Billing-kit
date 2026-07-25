@@ -8,6 +8,7 @@ import type {
   WebhookEventHandler,
   WebhookEventRecord,
 } from "../types/webhook";
+import { resolveDedupeEventId } from "./raw-body";
 
 export class WebhookService {
   constructor(
@@ -25,11 +26,12 @@ export class WebhookService {
   ): Promise<ProcessWebhookResult> {
     const started = Date.now();
     const event = this.verifyWebhook(request.rawBody, request.signature);
-    const eventId =
-      request.eventId ??
-      (event.provider === "razorpay"
-        ? fingerprint(request.rawBody)
-        : event.id);
+    const eventId = resolveDedupeEventId({
+      provider: event.provider === "stripe" ? "stripe" : "razorpay",
+      request,
+      event,
+      fingerprint: fingerprintWebhookPayload,
+    });
     const receivedAt = request.receivedAt ?? new Date();
     const claim = await this.repository.claim({
       eventId,
@@ -107,6 +109,7 @@ export class WebhookServiceFactory {
   }
 }
 
-function fingerprint(payload: string | Buffer): string {
+/** Stable dedupe key when the provider does not send an event id (Razorpay). */
+export function fingerprintWebhookPayload(payload: string | Buffer): string {
   return `sha256:${createHash("sha256").update(payload).digest("hex")}`;
 }

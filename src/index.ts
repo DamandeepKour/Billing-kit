@@ -301,6 +301,38 @@ export {
   mapStripeSubscriptionStatus,
   mapSubscriptionStatus,
 } from "./utils/subscription-status";
+export {
+  normalizeRazorpayWebhook,
+  normalizeStripeWebhook,
+} from "./utils/webhook-normalize";
+export {
+  createRawBodyMiddleware,
+  createWebhookHttpHandler,
+  ensureRawWebhookBody,
+  extractRawWebhookBody,
+  EXPRESS_WEBHOOK_RAW_BODY,
+  fingerprintWebhookPayload,
+  getHeader,
+  isRawWebhookBody,
+  parseWebhookRequest,
+  parseWebhookRequestFromHttp,
+  RAZORPAY_EVENT_ID_HEADER,
+  RAZORPAY_SIGNATURE_HEADER,
+  resolveDedupeEventId,
+  resolveWebhookEventIdFromHeaders,
+  resolveWebhookSignature,
+  STRIPE_SIGNATURE_HEADER,
+  WebhookService,
+  WebhookServiceFactory,
+} from "./webhook";
+export type {
+  CreateWebhookHttpHandlerOptions,
+  ExpressLikeResponse,
+  RawBodyIncomingMessage,
+  RawBodyMiddlewareOptions,
+  WebhookHeaderMap,
+  WebhookHttpRequestLike,
+} from "./webhook";
 export { RouteService } from "./route";
 export { UsageBillingError, UsageBillingService } from "./usage";
 export {
