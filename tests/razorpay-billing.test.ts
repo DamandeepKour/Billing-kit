@@ -67,6 +67,7 @@ describe("Razorpay orders and fetch helpers", () => {
         receipt: "rcpt_1",
       }),
     );
+
     expect(order).toMatchObject({
       id: "order_1",
       amount: 99900,
@@ -85,6 +86,7 @@ describe("Razorpay orders and fetch helpers", () => {
       receipt: "rcpt_2",
     });
 
+    
     const payment = await razorpayBilling().createPayment({ amount: 5000 });
     expect(payment.id).toBe("order_2");
     expect(payment.status).toBe("pending");
