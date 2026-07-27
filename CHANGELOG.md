@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Stripe-style billing lifecycle simulation helpers in `billing-kit/testing` (`createTestClock`, renew/fail/upgrade/schedule fixtures)
+- Lifecycle simulation tests for trials, renewals, payment failures, upgrades, and multi-phase schedules
+
 ## [1.0.0] - 2026-07-25
 
 First stable release of **billing-kit** — framework-agnostic Node.js billing SDK for Stripe and Razorpay.

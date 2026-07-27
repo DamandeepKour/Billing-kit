@@ -464,6 +464,30 @@ const event = billing.verifyWebhook(rawBody, signature);
 
 Local fixtures: `import { ... } from "billing-kit/testing"`.
 
+Subscription lifecycle simulations (Stripe Test Clock style — no live API):
+
+```typescript
+import {
+  createTestClock,
+  createSimulatedSubscription,
+  renewSimulatedSubscription,
+  failSimulatedPayment,
+  upgradeSimulatedSubscription,
+  createSimulatedSchedule,
+  advanceSchedulePhase,
+  toStripeSubscriptionObject,
+} from "billing-kit/testing";
+
+const clock = createTestClock(new Date("2026-01-01"));
+let sub = createSimulatedSubscription(clock, {
+  customerId: "cus_1",
+  priceId: "price_pro",
+  trialDays: 14,
+});
+clock.advanceTo(sub.trialEnd!);
+sub = renewSimulatedSubscription(sub, clock); // period advance
+```
+
 ---
 
 ## Refund example
