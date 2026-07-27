@@ -326,6 +326,115 @@ export class BillingKit {
     return this.paymentService.fetchRefund(refundId);
   }
 
+  fetchDispute(disputeId: string): Promise<import("../types/dispute").Dispute> {
+    return this.withAudit(
+      () => this.paymentService.fetchDispute(disputeId),
+      {
+        action: "dispute.fetched",
+        resourceType: "dispute",
+        resourceId: disputeId,
+      },
+      (dispute, obs) => ({
+        action: "dispute.fetched",
+        resourceType: "dispute",
+        resourceId: dispute.id,
+        relatedResourceIds: dispute.paymentId ? [dispute.paymentId] : undefined,
+        outcome: "success",
+        ...obsFields(obs),
+        payload: {
+          paymentId: dispute.paymentId,
+          amount: dispute.amount,
+          status: dispute.status,
+          providerStatus: dispute.providerStatus,
+        },
+      }),
+    );
+  }
+
+  listDisputes(
+    input?: import("../types/dispute").ListDisputesInput,
+  ): Promise<import("../types/dispute").Dispute[]> {
+    return this.paymentService.listDisputes(input);
+  }
+
+  acceptDispute(
+    input: import("../types/dispute").AcceptDisputeInput,
+  ): Promise<import("../types/dispute").Dispute> {
+    return this.withAudit(
+      () => this.paymentService.acceptDispute(input),
+      {
+        action: "dispute.accepted",
+        resourceType: "dispute",
+        resourceId: input.disputeId,
+      },
+      (dispute, obs) => ({
+        action: "dispute.accepted",
+        resourceType: "dispute",
+        resourceId: dispute.id,
+        relatedResourceIds: dispute.paymentId ? [dispute.paymentId] : undefined,
+        outcome: "success",
+        ...obsFields(obs),
+        payload: {
+          paymentId: dispute.paymentId,
+          amount: dispute.amount,
+          status: dispute.status,
+        },
+      }),
+    );
+  }
+
+  contestDispute(
+    input: import("../types/dispute").ContestDisputeInput,
+  ): Promise<import("../types/dispute").Dispute> {
+    return this.withAudit(
+      () => this.paymentService.contestDispute(input),
+      {
+        action: "dispute.contested",
+        resourceType: "dispute",
+        resourceId: input.disputeId,
+      },
+      (dispute, obs) => ({
+        action: "dispute.contested",
+        resourceType: "dispute",
+        resourceId: dispute.id,
+        relatedResourceIds: dispute.paymentId ? [dispute.paymentId] : undefined,
+        outcome: "success",
+        ...obsFields(obs),
+        payload: {
+          paymentId: dispute.paymentId,
+          amount: dispute.amount,
+          status: dispute.status,
+        },
+      }),
+    );
+  }
+
+  updateDisputeEvidence(
+    input: import("../types/dispute").UpdateDisputeEvidenceInput,
+  ): Promise<import("../types/dispute").Dispute> {
+    return this.withAudit(
+      () => this.paymentService.updateDisputeEvidence(input),
+      {
+        action: "dispute.evidence_submitted",
+        resourceType: "dispute",
+        resourceId: input.disputeId,
+      },
+      (dispute, obs) => ({
+        action: "dispute.evidence_submitted",
+        resourceType: "dispute",
+        resourceId: dispute.id,
+        relatedResourceIds: dispute.paymentId ? [dispute.paymentId] : undefined,
+        outcome: "success",
+        ...obsFields(obs),
+        payload: {
+          paymentId: dispute.paymentId,
+          amount: dispute.amount,
+          status: dispute.status,
+        },
+      }),
+    );
+  }
+
   capturePayment(input: CapturePaymentInput): Promise<PaymentResult> {
     return this.withPaymentAudit(
       () => this.paymentService.capturePayment(input),

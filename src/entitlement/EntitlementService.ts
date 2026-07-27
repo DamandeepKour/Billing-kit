@@ -189,11 +189,13 @@ export class EntitlementService {
     const subscriptionId =
       event.entity.kind === "subscription"
         ? event.entity.id
-        : stringValue(
-            raw?.subscription_id ??
-              raw?.subscription ??
-              event.entity.parentId,
-          );
+        : event.entity.kind === "dispute"
+          ? stringValue(raw?.subscription_id ?? raw?.subscription)
+          : stringValue(
+              raw?.subscription_id ??
+                raw?.subscription ??
+                event.entity.parentId,
+            );
 
     if (
       event.normalizedType === "subscription.cancelled" ||
@@ -218,6 +220,23 @@ export class EntitlementService {
           reason: event.type,
         });
       }
+      return;
+    }
+
+    if (event.normalizedType === "dispute.lost") {
+      if (subscriptionId || customerId) {
+        await this.revokeFeatureAccess({
+          subscriptionId,
+          customerId,
+          source: "dispute",
+          reason: event.type,
+        });
+      }
+      return;
+    }
+
+    if (event.normalizedType === "dispute.won") {
+      await this.restoreAfterPayment(customerId, subscriptionId);
       return;
     }
 
@@ -351,6 +370,13 @@ function webhookEntity(
   const subscription = data.subscription;
   if (subscription && typeof subscription === "object") {
     const entity = (subscription as Record<string, unknown>).entity;
+    if (entity && typeof entity === "object") {
+      return entity as Record<string, unknown>;
+    }
+  }
+  const dispute = data.dispute;
+  if (dispute && typeof dispute === "object") {
+    const entity = (dispute as Record<string, unknown>).entity;
     if (entity && typeof entity === "object") {
       return entity as Record<string, unknown>;
     }

@@ -1,6 +1,6 @@
 # billing-kit
 
-Framework-agnostic Node.js billing SDK for invoices, tax (GST / VAT), Stripe and Razorpay payments, subscriptions, refunds, webhooks, and PDF generation.
+Framework-agnostic Node.js billing SDK for invoices, tax (GST / VAT), Stripe and Razorpay payments, subscriptions, refunds, disputes, webhooks, and PDF generation.
 
 ```bash
 npm install billing-kit
@@ -16,6 +16,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release history, [PUBLISHING.md](./PUBLIS
 - **Invoices** — line items, discounts, tax, numbering, PDF export
 - **Payments** — create, capture, cancel, status (Stripe PaymentIntents / Razorpay Orders)
 - **Refunds** — full and partial, with optional idempotency keys
+- **Disputes** — fetch/list, Razorpay accept/contest, Stripe evidence, normalized webhook events
 - **Subscriptions** — plans, create, pause / resume, cancel, schedule cancellation, renew
 - **Tax** — GST (CGST/SGST/IGST), VAT, sales tax, `autoTax`, place of supply
 - **Multi-currency** — `inr`, `usd`, `eur`, `gbp`, `aed`, `sgd` (amounts in smallest units)
@@ -404,6 +405,16 @@ app.post(
       case "refund.processed":
         // update refund state
         break;
+      case "dispute.created":
+      case "dispute.action_required":
+        // notify ops / gather evidence
+        break;
+      case "dispute.lost":
+        // access revoked automatically when entitlements are enabled
+        break;
+      case "dispute.won":
+        // access restored automatically when entitlements are enabled
+        break;
     }
   }),
 );
@@ -519,6 +530,48 @@ console.log(partial.status, partial.observability?.correlationId);
 ```
 
 Reusing the same `idempotencyKey` with the same payload returns the stored result. A different payload with the same key throws `IdempotencyConflictError`.
+
+---
+
+## Dispute example
+
+Chargebacks / disputes are provider-initiated. billing-kit normalizes webhook events and exposes fetch + response APIs.
+
+```typescript
+import { BillingKit } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  keySecret: process.env.RAZORPAY_KEY_SECRET!,
+  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET!,
+});
+
+const dispute = await billing.fetchDispute("disp_xxx");
+const open = await billing.listDisputes({ count: 20 });
+
+// Razorpay — accept or contest
+await billing.acceptDispute({ disputeId: "disp_xxx" });
+await billing.contestDispute({
+  disputeId: "disp_yyy",
+  amount: 50000,
+  summary: "Service was delivered as described",
+});
+
+// Stripe — submit evidence
+await billing.updateDisputeEvidence({
+  disputeId: "dp_xxx",
+  evidence: {
+    product_description: "Annual Pro plan",
+    customer_communication: "file_abc",
+  },
+  submit: true,
+});
+```
+
+Normalized webhook types: `dispute.created`, `dispute.under_review`, `dispute.action_required`, `dispute.won`, `dispute.lost`, `dispute.closed`.
+
+With entitlements enabled, `dispute.lost` revokes access and `dispute.won` restores it. `dispute.action_required` does **not** revoke — handle it in your webhook handler.
 
 ---
 
@@ -727,6 +780,16 @@ formatAmount(99900, "inr"); // "₹999.00"
 | Method | Description |
 |--------|-------------|
 | `refundPayment(input)` | Full or partial refund |
+
+### Disputes
+
+| Method | Description |
+|--------|-------------|
+| `fetchDispute(id)` | Fetch a dispute by id |
+| `listDisputes(input?)` | List disputes |
+| `acceptDispute(input)` | Accept a Razorpay dispute |
+| `contestDispute(input)` | Contest a Razorpay dispute |
+| `updateDisputeEvidence(input)` | Submit Stripe dispute evidence |
 
 ### Subscriptions
 

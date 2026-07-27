@@ -1,4 +1,10 @@
 import type {
+  AcceptDisputeInput,
+  ContestDisputeInput,
+  Dispute,
+  ListDisputesInput,
+} from "../types/dispute";
+import type {
   CreateOrderInput,
   OrderResult,
   VerifyPaymentSignatureInput,
@@ -19,6 +25,10 @@ export type RazorpayBillingProvider = RouteTransferProvider & {
   verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean;
   fetchPayment(paymentId: string): Promise<PaymentResult>;
   fetchRefund(refundId: string): Promise<RefundResult>;
+  fetchDispute(disputeId: string): Promise<Dispute>;
+  listDisputes(input?: ListDisputesInput): Promise<Dispute[]>;
+  acceptDispute(input: AcceptDisputeInput): Promise<Dispute>;
+  contestDispute(input: ContestDisputeInput): Promise<Dispute>;
   createPlan(input: CreatePlanInput): Promise<Plan>;
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription>;
   cancelSubscription(subscriptionId: string): Promise<Subscription>;

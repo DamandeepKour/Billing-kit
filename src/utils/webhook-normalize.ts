@@ -19,6 +19,9 @@ type RazorpayWebhookBody = {
     invoice?: {
       entity?: Record<string, unknown>;
     };
+    dispute?: {
+      entity?: Record<string, unknown>;
+    };
   };
 };
 const RAZORPAY_NORMALIZED: Record<string, NormalizedWebhookType> = {
@@ -31,6 +34,12 @@ const RAZORPAY_NORMALIZED: Record<string, NormalizedWebhookType> = {
   "subscription.cancelled": "subscription.cancelled",
   "subscription.completed": "subscription.completed",
   "invoice.paid": "invoice.paid",
+  "payment.dispute.created": "dispute.created",
+  "payment.dispute.won": "dispute.won",
+  "payment.dispute.lost": "dispute.lost",
+  "payment.dispute.closed": "dispute.closed",
+  "payment.dispute.under_review": "dispute.under_review",
+  "payment.dispute.action_required": "dispute.action_required",
 };
 const STRIPE_NORMALIZED: Record<string, NormalizedWebhookType> = {
   "payment_intent.succeeded": "payment.captured",
@@ -41,6 +50,11 @@ const STRIPE_NORMALIZED: Record<string, NormalizedWebhookType> = {
   "customer.subscription.deleted": "subscription.cancelled",
   "invoice.paid": "invoice.paid",
   "invoice.payment_succeeded": "subscription.charged",
+  "charge.dispute.created": "dispute.created",
+  "charge.dispute.updated": "dispute.updated",
+  "charge.dispute.closed": "dispute.closed",
+  "charge.dispute.funds_withdrawn": "dispute.lost",
+  "charge.dispute.funds_reinstated": "dispute.won",
 };
 function asNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -70,6 +84,8 @@ function entityFrom(
     parentId:
       parentId ??
       asString(entity.payment_id) ??
+      asString(entity.payment_intent) ??
+      asString(entity.charge) ??
       asString(entity.plan_id) ??
       asString(entity.order_id),
   };
@@ -80,7 +96,10 @@ export function normalizeRazorpayWebhook(body: string, provider: string): Webhoo
   const payload = parsed.payload ?? {};
   let entity: WebhookEntity = { id: `evt_${Date.now()}`, kind: "unknown" };
   let source: Record<string, unknown> | undefined;
-  if (payload.payment?.entity) {
+  if (payload.dispute?.entity) {
+    source = payload.dispute.entity;
+    entity = entityFrom("dispute", payload.dispute.entity);
+  } else if (payload.payment?.entity) {
     source = payload.payment.entity;
     entity = entityFrom("payment", payload.payment.entity);
   } else if (payload.refund?.entity) {
@@ -125,6 +144,21 @@ export function normalizeStripeWebhook(
   };
   if (type.startsWith("payment_intent.")) {
     entity = { ...entity, kind: "payment" };
+  } else if (type.startsWith("charge.dispute.")) {
+    entity = {
+      ...entity,
+      kind: "dispute",
+      parentId:
+        asString(object?.payment_intent) ??
+        asString(object?.charge) ??
+        asString(object?.payment_id),
+      // Prefer dispute status over charge status
+      status: asString(object?.status),
+      amount: asNumber(object?.amount),
+    };
+    if (object?.status === "won") {
+      // closed+won often arrives as charge.dispute.closed
+    }
   } else if (type.startsWith("charge.") || type === "charge.refunded") {
     entity = {
       ...entity,
@@ -175,6 +209,11 @@ export function normalizeStripeWebhook(
   let normalizedType: NormalizedWebhookType = STRIPE_NORMALIZED[type] ?? "unknown";
   if (type === "invoice.paid" && entity.parentId) {
     normalizedType = "subscription.charged";
+  }
+  if (type === "charge.dispute.closed") {
+    const status = asString(object?.status)?.toLowerCase();
+    if (status === "won") normalizedType = "dispute.won";
+    else if (status === "lost") normalizedType = "dispute.lost";
   }
   return {
     id: eventId,

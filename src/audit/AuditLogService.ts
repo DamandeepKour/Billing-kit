@@ -66,7 +66,7 @@ export class AuditLogService {
   async getPaymentAuditLog(paymentId: string): Promise<AuditLogEntry[]> {
     const [direct, related] = await Promise.all([
       this.repository.list({
-        resourceType: ["payment", "refund"],
+        resourceType: ["payment", "refund", "dispute"],
         resourceId: paymentId,
       }),
       this.repository.list({ relatedResourceId: paymentId }),

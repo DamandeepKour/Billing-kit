@@ -107,6 +107,14 @@ export type {
   RevokeFeatureAccessInput,
   RefundPaymentInput,
   RefundResult,
+  AcceptDisputeInput,
+  ContestDisputeInput,
+  Dispute,
+  DisputeEvidence,
+  DisputePhase,
+  DisputeStatus,
+  ListDisputesInput,
+  UpdateDisputeEvidenceInput,
   ReportBillingFailureInput,
   ReportBillingRecoveryInput,
   ReportingFilter,
@@ -301,6 +309,11 @@ export {
   mapStripeSubscriptionStatus,
   mapSubscriptionStatus,
 } from "./utils/subscription-status";
+export {
+  mapDisputePhase,
+  mapRazorpayDisputeStatus,
+  mapStripeDisputeStatus,
+} from "./utils/dispute-status";
 export {
   normalizeRazorpayWebhook,
   normalizeStripeWebhook,

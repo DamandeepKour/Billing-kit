@@ -11,6 +11,7 @@ export type EntitlementSource =
   | "subscription_retrieve"
   | "payment_failure"
   | "payment_recovery"
+  | "dispute"
   | "webhook"
   | "manual";
 

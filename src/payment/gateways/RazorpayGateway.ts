@@ -4,6 +4,13 @@ import type { PaymentGateway } from "../../interfaces/PaymentGateway";
 import type { RazorpayBillingProvider } from "../../interfaces/RazorpayBillingProvider";
 import type { BillingKitConfig } from "../../types/config";
 import type {
+  AcceptDisputeInput,
+  ContestDisputeInput,
+  Dispute,
+  DisputeEvidence,
+  ListDisputesInput,
+} from "../../types/dispute";
+import type {
   CreateOrderInput,
   OrderResult,
   VerifyPaymentSignatureInput,
@@ -45,6 +52,10 @@ import {
   withRazorpayErrors,
 } from "../../utils/razorpay-errors";
 import { normalizeCurrency } from "../../utils/currency";
+import {
+  mapDisputePhase,
+  mapRazorpayDisputeStatus,
+} from "../../utils/dispute-status";
 import { mapRazorpaySubscriptionStatus } from "../../utils/subscription-status";
 import { normalizeRazorpayWebhook } from "../../utils/webhook-normalize";
 import { calculateSplitAllocations } from "../../utils/split";
@@ -225,6 +236,108 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
       };
       });
   }
+
+  async fetchDispute(disputeId: string): Promise<Dispute> {
+    return this.run(async () => {
+      const raw = await this.razorpayApiRequest(
+        "GET",
+        `/disputes/${encodeURIComponent(disputeId)}`,
+      );
+      return mapRazorpayDispute(raw, this.name);
+    });
+  }
+
+  async listDisputes(input: ListDisputesInput = {}): Promise<Dispute[]> {
+    return this.run(async () => {
+      const params = new URLSearchParams();
+      if (input.count !== undefined) params.set("count", String(input.count));
+      if (input.skip !== undefined) params.set("skip", String(input.skip));
+      const query = params.toString();
+      const raw = await this.razorpayApiRequest(
+        "GET",
+        `/disputes${query ? `?${query}` : ""}`,
+      );
+      const items = (raw.items as Array<Record<string, unknown>> | undefined) ?? [];
+      return items.map((item) => mapRazorpayDispute(item, this.name));
+    });
+  }
+
+  async acceptDispute(input: AcceptDisputeInput): Promise<Dispute> {
+    return this.run(async () => {
+      const raw = await this.razorpayApiRequest(
+        "POST",
+        `/disputes/${encodeURIComponent(input.disputeId)}/accept`,
+      );
+      return mapRazorpayDispute(raw, this.name);
+    });
+  }
+
+  async contestDispute(input: ContestDisputeInput): Promise<Dispute> {
+    return this.run(async () => {
+      const body: Record<string, unknown> = {};
+      if (input.amount !== undefined) body.amount = input.amount;
+      if (input.submit !== undefined) body.submit = input.submit;
+      if (input.evidence) {
+        body.evidence = mapRazorpayEvidence(input.evidence);
+        if (input.evidence.explanation) {
+          body.explanation = input.evidence.explanation;
+        }
+      }
+      const raw = await this.razorpayApiRequest(
+        "PATCH",
+        `/disputes/${encodeURIComponent(input.disputeId)}`,
+        body,
+      );
+      return mapRazorpayDispute(raw, this.name);
+    });
+  }
+
+  private async razorpayApiRequest(
+    method: "GET" | "POST" | "PATCH",
+    path: string,
+    body?: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const authorization = Buffer.from(
+      `${this.config.keyId}:${this.config.secretKey}`,
+    ).toString("base64");
+    const response = await fetch(`https://api.razorpay.com/v1${path}`, {
+      method,
+      headers: {
+        Authorization: `Basic ${authorization}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = await response.text();
+    let payload: unknown;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { message: text };
+    }
+    if (!response.ok) {
+      const parsed = payload as {
+        error?: { description?: string; code?: string; field?: string };
+        message?: string;
+      };
+      const headers: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+      mapRazorpayError({
+        statusCode: response.status,
+        error: parsed.error ?? {
+          description:
+            parsed.message ??
+            `Razorpay request failed with status ${response.status}`,
+        },
+        message: parsed.message,
+        headers,
+      });
+    }
+    return payload as Record<string, unknown>;
+  }
+
   verifyPaymentSignature(input: VerifyPaymentSignatureInput): boolean {
     const expected = crypto
       .createHmac("sha256", this.config.secretKey)
@@ -664,6 +777,69 @@ function mapTransfer(
     paymentId: paymentId ?? (raw.source ? String(raw.source) : undefined),
     onHold,
     provider,
+    providerResponse: raw,
+  };
+}
+
+function mapRazorpayEvidence(
+  evidence: DisputeEvidence,
+): Record<string, unknown> {
+  const mapped: Record<string, unknown> = {
+    ...(evidence.providerFields ?? {}),
+  };
+  if (evidence.shippingProof) mapped.shipping_proof = evidence.shippingProof;
+  if (evidence.billingProof) mapped.billing_proof = evidence.billingProof;
+  if (evidence.cancellationProof) {
+    mapped.cancellation_proof = evidence.cancellationProof;
+  }
+  if (evidence.customerCommunication) {
+    mapped.customer_communication = evidence.customerCommunication;
+  }
+  if (evidence.proofOfService) mapped.proof_of_service = evidence.proofOfService;
+  if (evidence.refundConfirmation) {
+    mapped.refund_confirmation = evidence.refundConfirmation;
+  }
+  if (evidence.accessActivityLog) {
+    mapped.access_activity_log = evidence.accessActivityLog;
+  }
+  if (evidence.refundPolicy) mapped.refund_policy = evidence.refundPolicy;
+  if (evidence.other) mapped.other = evidence.other;
+  return mapped;
+}
+
+function mapRazorpayDispute(
+  raw: Record<string, unknown>,
+  provider: string,
+): Dispute {
+  const providerStatus = raw.status ? String(raw.status) : undefined;
+  const respondBy = raw.respond_by ?? raw.evidence_due_by;
+  const createdAt = raw.created_at;
+  const evidence =
+    raw.evidence && typeof raw.evidence === "object"
+      ? (raw.evidence as Record<string, unknown>)
+      : undefined;
+  return {
+    id: String(raw.id ?? ""),
+    paymentId: String(raw.payment_id ?? ""),
+    amount: Number(raw.amount ?? 0),
+    currency: String(raw.currency ?? "inr").toLowerCase(),
+    amountDeducted:
+      raw.amount_deducted !== undefined
+        ? Number(raw.amount_deducted)
+        : undefined,
+    status: mapRazorpayDisputeStatus(providerStatus),
+    providerStatus,
+    phase: mapDisputePhase(raw.phase ? String(raw.phase) : undefined),
+    reasonCode: raw.reason_code ? String(raw.reason_code) : undefined,
+    reasonDescription: raw.reason_description
+      ? String(raw.reason_description)
+      : undefined,
+    respondBy:
+      typeof respondBy === "number" ? new Date(respondBy * 1000) : undefined,
+    evidenceSubmitted: Boolean(evidence?.submitted ?? raw.submitted),
+    provider,
+    createdAt:
+      typeof createdAt === "number" ? new Date(createdAt * 1000) : undefined,
     providerResponse: raw,
   };
 }

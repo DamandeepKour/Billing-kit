@@ -33,6 +33,16 @@ export type {
   RefundPaymentInput,
   RefundResult,
 } from "./payment";
+export type {
+  AcceptDisputeInput,
+  ContestDisputeInput,
+  Dispute,
+  DisputeEvidence,
+  DisputePhase,
+  DisputeStatus,
+  ListDisputesInput,
+  UpdateDisputeEvidenceInput,
+} from "./dispute";
 export type { CreateOrderInput, OrderResult, VerifyPaymentSignatureInput } from "./order";
 export type {
   ClaimWebhookEventResult,

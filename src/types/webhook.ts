@@ -8,12 +8,20 @@ export type NormalizedWebhookType =
   | "subscription.cancelled"
   | "subscription.completed"
   | "invoice.paid"
+  | "dispute.created"
+  | "dispute.won"
+  | "dispute.lost"
+  | "dispute.closed"
+  | "dispute.under_review"
+  | "dispute.action_required"
+  | "dispute.updated"
   | "unknown";
 export type WebhookEntityKind =
   | "payment"
   | "refund"
   | "subscription"
   | "invoice"
+  | "dispute"
   | "unknown";
 export interface WebhookEntity {
   id: string;
@@ -81,5 +89,11 @@ export const RAZORPAY_WEBHOOK_EVENTS = [
   "subscription.cancelled",
   "subscription.completed",
   "invoice.paid",
+  "payment.dispute.created",
+  "payment.dispute.won",
+  "payment.dispute.lost",
+  "payment.dispute.closed",
+  "payment.dispute.under_review",
+  "payment.dispute.action_required",
 ] as const;
 export type RazorpayWebhookEventName = (typeof RAZORPAY_WEBHOOK_EVENTS)[number];

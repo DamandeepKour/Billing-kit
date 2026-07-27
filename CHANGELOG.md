@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dispute handling for Razorpay and Stripe: fetch/list, accept/contest (Razorpay), evidence updates (Stripe), and normalized `dispute.*` webhook events
+- Entitlement side effects on `dispute.lost` (revoke) and `dispute.won` (restore)
+- Dispute testing fixtures (`createMockRazorpayDispute`, `createMockStripeDispute`)
 - Stripe-style billing lifecycle simulation helpers in `billing-kit/testing` (`createTestClock`, renew/fail/upgrade/schedule fixtures)
 - Lifecycle simulation tests for trials, renewals, payment failures, upgrades, and multi-phase schedules
 

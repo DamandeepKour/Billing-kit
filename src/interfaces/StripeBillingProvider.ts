@@ -25,6 +25,11 @@ import type {
   Subscription,
   UsageRecord,
 } from "../types/subscription";
+import type {
+  Dispute,
+  ListDisputesInput,
+  UpdateDisputeEvidenceInput,
+} from "../types/dispute";
 export interface StripeBillingProvider {
   createPlan(input: CreatePlanInput): Promise<Plan>;
   createSubscription(input: CreateSubscriptionInput): Promise<Subscription>;
@@ -55,4 +60,7 @@ export interface StripeBillingProvider {
     input: CreatePaymentMethodUpdateSessionInput,
   ): Promise<BillingPortalSession>;
   reportUsage(input: ReportUsageInput): Promise<UsageRecord>;
+  fetchDispute(disputeId: string): Promise<Dispute>;
+  listDisputes(input?: ListDisputesInput): Promise<Dispute[]>;
+  updateDisputeEvidence(input: UpdateDisputeEvidenceInput): Promise<Dispute>;
 }

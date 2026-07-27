@@ -9,6 +9,13 @@ import type {
   VerifyPaymentSignatureInput,
 } from "../types/order";
 import type {
+  AcceptDisputeInput,
+  ContestDisputeInput,
+  Dispute,
+  ListDisputesInput,
+  UpdateDisputeEvidenceInput,
+} from "../types/dispute";
+import type {
   CapturePaymentInput,
   CreatePaymentInput,
   PaymentResult,
@@ -20,6 +27,7 @@ import {
   generateIdempotencyKey,
 } from "../utils/idempotency";
 import { UnsupportedOperationError } from "../utils/stripe-errors";
+import type { StripeBillingProvider } from "../interfaces/StripeBillingProvider";
 
 function isRazorpayBillingProvider(
   gateway: PaymentGateway,
@@ -29,6 +37,17 @@ function isRazorpayBillingProvider(
     gateway.name === "razorpay" &&
     typeof candidate.createOrder === "function" &&
     typeof candidate.verifyPaymentSignature === "function"
+  );
+}
+
+function isStripeBillingProvider(
+  gateway: PaymentGateway,
+): gateway is PaymentGateway & StripeBillingProvider {
+  const candidate = gateway as PaymentGateway & Partial<StripeBillingProvider>;
+  return (
+    gateway.name === "stripe" &&
+    typeof candidate.fetchDispute === "function" &&
+    typeof candidate.createCustomer === "function"
   );
 }
 
@@ -223,5 +242,45 @@ export class PaymentService {
 
   async fetchRefund(refundId: string): Promise<RefundResult> {
     return this.requireRazorpay().fetchRefund(refundId);
+  }
+
+  async fetchDispute(disputeId: string): Promise<Dispute> {
+    if (isRazorpayBillingProvider(this.gateway)) {
+      return this.gateway.fetchDispute(disputeId);
+    }
+    if (isStripeBillingProvider(this.gateway)) {
+      return this.gateway.fetchDispute(disputeId);
+    }
+    throw new UnsupportedOperationError("fetchDispute", this.gateway.name);
+  }
+
+  async listDisputes(input: ListDisputesInput = {}): Promise<Dispute[]> {
+    if (isRazorpayBillingProvider(this.gateway)) {
+      return this.gateway.listDisputes(input);
+    }
+    if (isStripeBillingProvider(this.gateway)) {
+      return this.gateway.listDisputes(input);
+    }
+    throw new UnsupportedOperationError("listDisputes", this.gateway.name);
+  }
+
+  async acceptDispute(input: AcceptDisputeInput): Promise<Dispute> {
+    return this.requireRazorpay().acceptDispute(input);
+  }
+
+  async contestDispute(input: ContestDisputeInput): Promise<Dispute> {
+    return this.requireRazorpay().contestDispute(input);
+  }
+
+  async updateDisputeEvidence(
+    input: UpdateDisputeEvidenceInput,
+  ): Promise<Dispute> {
+    if (!isStripeBillingProvider(this.gateway)) {
+      throw new UnsupportedOperationError(
+        "updateDisputeEvidence",
+        this.gateway.name,
+      );
+    }
+    return this.gateway.updateDisputeEvidence(input);
   }
 }

@@ -306,6 +306,95 @@ export function createMockStripeInvoicePaid(
   });
 }
 
+export function createMockRazorpayDispute(
+  event:
+    | "payment.dispute.created"
+    | "payment.dispute.won"
+    | "payment.dispute.lost"
+    | "payment.dispute.closed"
+    | "payment.dispute.under_review"
+    | "payment.dispute.action_required",
+  overrides: {
+    id?: string;
+    payment_id?: string;
+    amount?: number;
+    currency?: string;
+    status?: string;
+    phase?: string;
+    reason_code?: string;
+    created_at?: number;
+    respond_by?: number;
+    customer_id?: string;
+  } = {},
+): MockWebhookPayload {
+  const createdAt = overrides.created_at ?? unixNow();
+  const statusFromEvent: Record<string, string> = {
+    "payment.dispute.created": "open",
+    "payment.dispute.won": "won",
+    "payment.dispute.lost": "lost",
+    "payment.dispute.closed": "closed",
+    "payment.dispute.under_review": "under_review",
+    "payment.dispute.action_required": "action_required",
+  };
+  return asPayload({
+    event,
+    created_at: createdAt,
+    payload: {
+      dispute: {
+        entity: {
+          id: overrides.id ?? "disp_test_1",
+          payment_id: overrides.payment_id ?? "pay_test_captured",
+          amount: overrides.amount ?? 50000,
+          currency: overrides.currency ?? "INR",
+          status: overrides.status ?? statusFromEvent[event] ?? "open",
+          phase: overrides.phase ?? "chargeback",
+          reason_code: overrides.reason_code ?? "goods_or_services_not_provided",
+          created_at: createdAt,
+          respond_by: overrides.respond_by ?? createdAt + 7 * 24 * 60 * 60,
+          customer_id: overrides.customer_id,
+        },
+      },
+    },
+  });
+}
+
+export function createMockStripeDispute(
+  type:
+    | "charge.dispute.created"
+    | "charge.dispute.updated"
+    | "charge.dispute.closed"
+    | "charge.dispute.funds_withdrawn"
+    | "charge.dispute.funds_reinstated",
+  overrides: StripeObjectOverrides = {},
+): MockWebhookPayload {
+  const status =
+    overrides.status ??
+    (type === "charge.dispute.funds_reinstated"
+      ? "won"
+      : type === "charge.dispute.funds_withdrawn"
+        ? "lost"
+        : type === "charge.dispute.closed"
+          ? "lost"
+          : "needs_response");
+  return createMockStripeEvent({
+    type,
+    object: {
+      id: overrides.id ?? "dp_test_1",
+      object: "dispute",
+      amount: overrides.amount ?? 2500,
+      currency: overrides.currency ?? "usd",
+      status,
+      reason: "product_not_received",
+      charge: overrides.charge ?? "ch_test_1",
+      payment_intent: overrides.payment_intent ?? "pi_test_succeeded",
+      evidence_details: {
+        due_by: unixNow() + 7 * 24 * 60 * 60,
+        submission_count: 0,
+      },
+    },
+  });
+}
+
 export const webhookFixtures = {
   razorpay: {
     paymentCaptured: createMockRazorpayPaymentCaptured,
@@ -313,6 +402,7 @@ export const webhookFixtures = {
     refundProcessed: createMockRazorpayRefundProcessed,
     subscription: createMockRazorpaySubscription,
     invoicePaid: createMockRazorpayInvoicePaid,
+    dispute: createMockRazorpayDispute,
   },
   stripe: {
     event: createMockStripeEvent,
@@ -321,5 +411,6 @@ export const webhookFixtures = {
     chargeRefunded: createMockStripeChargeRefunded,
     subscription: createMockStripeSubscription,
     invoicePaid: createMockStripeInvoicePaid,
+    dispute: createMockStripeDispute,
   },
 } as const;

@@ -41,9 +41,15 @@ import type {
   UsageRecord,
   UsageType,
 } from "../../types/subscription";
+import type {
+  Dispute,
+  ListDisputesInput,
+  UpdateDisputeEvidenceInput,
+} from "../../types/dispute";
 import type { WebhookEvent } from "../../types/webhook";
 import { InvalidConfigError, WebhookVerificationError } from "../../utils/errors";
 import { normalizeCurrency } from "../../utils/currency";
+import { mapStripeDisputeStatus } from "../../utils/dispute-status";
 import { mapStripeError, withStripeErrors } from "../../utils/stripe-errors";
 import { normalizeStripeWebhook } from "../../utils/webhook-normalize";
 const INTERVAL_MAP: Record<string, Stripe.Price.Recurring.Interval> = {
@@ -643,6 +649,47 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
       };
     });
   }
+
+  async fetchDispute(disputeId: string): Promise<Dispute> {
+    return withStripeErrors(async () => {
+      const dispute = await this.stripe.disputes.retrieve(disputeId);
+      return mapStripeDispute(dispute, this.name);
+    });
+  }
+
+  async listDisputes(input: ListDisputesInput = {}): Promise<Dispute[]> {
+    return withStripeErrors(async () => {
+      const page = await this.stripe.disputes.list({
+        limit: input.count,
+        charge: input.chargeId,
+        payment_intent: input.paymentIntentId,
+      });
+      return page.data.map((dispute) => mapStripeDispute(dispute, this.name));
+    });
+  }
+
+  async updateDisputeEvidence(
+    input: UpdateDisputeEvidenceInput,
+  ): Promise<Dispute> {
+    return withStripeErrors(async () => {
+      const evidence = input.evidence;
+      const dispute = await this.stripe.disputes.update(input.disputeId, {
+        submit: input.submit ?? true,
+        metadata: input.metadata,
+        evidence: evidence
+          ? {
+              uncategorized_text: evidence.explanation,
+              shipping_documentation: evidence.shippingProof?.[0],
+              customer_communication: evidence.customerCommunication?.[0],
+              refund_policy: evidence.refundPolicy?.[0],
+              ...(evidence.providerFields as Stripe.DisputeUpdateParams.Evidence | undefined),
+            }
+          : undefined,
+      });
+      return mapStripeDispute(dispute, this.name);
+    });
+  }
+
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
     if (!this.config.webhookSecret) {
       throw new WebhookVerificationError("webhookSecret is required for Stripe webhooks");
@@ -664,4 +711,38 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
       mapStripeError(error);
     }
   }
+}
+
+function mapStripeDispute(
+  dispute: Stripe.Dispute,
+  provider: string,
+): Dispute {
+  const chargeId =
+    typeof dispute.charge === "string" ? dispute.charge : dispute.charge?.id;
+  const paymentIntent =
+    typeof dispute.payment_intent === "string"
+      ? dispute.payment_intent
+      : dispute.payment_intent?.id;
+  return {
+    id: dispute.id,
+    paymentId: paymentIntent ?? chargeId ?? "",
+    chargeId,
+    amount: dispute.amount,
+    currency: dispute.currency,
+    status: mapStripeDisputeStatus(dispute.status),
+    providerStatus: dispute.status,
+    reasonCode: dispute.reason,
+    reasonDescription: dispute.reason,
+    evidenceDueBy: dispute.evidence_details?.due_by
+      ? new Date(dispute.evidence_details.due_by * 1000)
+      : undefined,
+    evidenceSubmitted: Boolean(dispute.evidence_details?.submission_count),
+    respondBy: dispute.evidence_details?.due_by
+      ? new Date(dispute.evidence_details.due_by * 1000)
+      : undefined,
+    provider,
+    createdAt: new Date(dispute.created * 1000),
+    metadata: dispute.metadata as Record<string, string>,
+    providerResponse: dispute,
+  };
 }
