@@ -66,7 +66,8 @@
     "node": ">=18"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "tsup src/index.ts src/testing/index.ts --format cjs,esm --dts --clean",

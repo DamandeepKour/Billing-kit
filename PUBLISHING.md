@@ -59,7 +59,7 @@ Confirm:
 - [ ] `CHANGELOG.md` lists the upcoming version
 - [ ] `npm run validate:pack` passes
 - [ ] No secrets in the package (`npm pack --dry-run` / inspect tarball)
-- [ ] You are logged into npm (`npm whoami`) with publish rights
+- [ ] Trusted Publisher on npm points at `publish.yml` (for OIDC releases)
 
 ### 2. Bump the version
 
@@ -82,23 +82,56 @@ git tag -a vX.Y.Z -m "vX.Y.Z"
 
 Tag format: **`vX.Y.Z`** (leading `v`).
 
-### 3. Publish to npm
+### 3. Publish to npm (preferred: GitHub Actions + provenance)
+
+**Do not publish from a laptop for production releases.** Prefer the `Publish` workflow so npm records [provenance](https://docs.npmjs.com/generating-provenance-statements) attestations (build repo, commit, and workflow).
+
+#### One-time trusted publisher setup
+
+1. Create the package on npm (first release only) or open the existing package page
+2. npmjs.com → **Package** → **Settings** → **Trusted Publisher**
+3. Choose **GitHub Actions** and set:
+   - Organization or user: `DamandeepKour`
+   - Repository: `Billing-kit`
+   - Workflow filename: `publish.yml` (filename only, including extension)
+4. Optional hardening after the first successful OIDC publish:
+   - Publishing access → require 2FA and **disallow tokens**
+   - GitHub → Settings → Environments → `npm` → required reviewers
+   - Protect `v*` tags so only maintainers can push release tags
+
+Requires **Node ≥ 22.14** and **npm CLI ≥ 11.5.1** in CI (the publish workflow uses Node 24).
+
+#### Cut a release
 
 ```bash
-npm publish
+# After version bump + CHANGELOG on main
+git push origin main
+git tag -a vX.Y.Z -m "vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
-`prepublishOnly` runs lint, typecheck, and tests. `prepack` rebuilds and validates package contents (README, LICENSE, CHANGELOG, dist entrypoints, CJS/ESM load). Use `npm run validate:pack` to also inspect the npm tarball.
+Pushing the annotated tag runs [`.github/workflows/publish.yml`](./.github/workflows/publish.yml):
 
-The package is public (`publishConfig.access: "public"`). Published files are whatever `package.json` → `files` allows (`dist`, `README.md`, `LICENSE`, `CHANGELOG.md`).
+- Verifies `vX.Y.Z` matches `package.json` version
+- Runs `npm run ci`
+- Publishes with OIDC (`id-token: write`) — **no `NPM_TOKEN` secret**
+- Emits provenance automatically for this public repo (`publishConfig.provenance: true`)
 
-### 4. Push and GitHub release
+`prepublishOnly` / `prepack` still run inside `npm publish`. Published files are whatever `package.json` → `files` allows (`dist`, `README.md`, `LICENSE`, `CHANGELOG.md`).
+
+#### Manual / emergency publish (no provenance from OIDC)
+
+Only if Actions is unavailable. Local publishes do **not** get trusted-publisher provenance:
 
 ```bash
-git push origin main --follow-tags
+npm publish --access public
 ```
 
-Create a GitHub Release from the tag (UI or CLI):
+Prefer restoring the OIDC workflow instead of relying on long-lived tokens.
+
+### 4. GitHub release
+
+Tag push already published the package. Create a GitHub Release from the tag (UI or CLI):
 
 ```bash
 gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
@@ -110,8 +143,11 @@ Prefer pasting the matching `CHANGELOG.md` section as the release notes.
 
 ```bash
 npm view billing-kit version
+npm view billing-kit dist.attestations   # provenance present when published via OIDC
 npm install billing-kit@X.Y.Z   # in a scratch project
 ```
+
+On the package page, npm should show a **Provenance** badge for the version published from GitHub Actions.
 
 ---
 
@@ -131,7 +167,7 @@ npm publish --dry-run      # simulate publish (runs lifecycle hooks)
 
 1. Fix on `main` (or a short-lived branch → PR)
 2. Add a **Fixed** entry under Unreleased → cut as patch
-3. `npm version patch` → `npm publish` → push tag → GitHub release
+3. `npm version patch` → push tag `v*` → GitHub Actions publishes with provenance → GitHub release
 
 ---
 
@@ -152,12 +188,13 @@ Do not force-unpublish except in rare security cases (npm policy applies).
 [ ] CI green on main
 [ ] CHANGELOG.md updated for X.Y.Z
 [ ] Version bumped (package.json + git tag vX.Y.Z)
+[ ] Trusted publisher on npm points at publish.yml (OIDC)
 [ ] npm run validate:pack passes
 [ ] npm publish --dry-run looks correct
-[ ] npm publish succeeded
-[ ] git push --follow-tags
+[ ] Tag pushed; Publish workflow succeeded (provenance)
 [ ] GitHub Release created
 [ ] npm view billing-kit version matches
+[ ] Provenance visible on the npm package version page
 ```
 
 ### First stable release (`1.0.0`)

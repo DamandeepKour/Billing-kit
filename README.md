@@ -870,8 +870,9 @@ Lifecycle hooks:
 
 - `prepublishOnly` — lint, typecheck, test (before `npm publish`)
 - `prepack` — build + `validate:package` (before `npm pack` / publish tarball)
+- `publishConfig.provenance` — npm provenance attestations when publishing via GitHub Actions OIDC
 
-For maintainers: see **[PUBLISHING.md](./PUBLISHING.md)** (versioning + release flow), **[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)** (v1.0.0 first stable), and **[CHANGELOG.md](./CHANGELOG.md)**.
+For maintainers: see **[PUBLISHING.md](./PUBLISHING.md)** (versioning, trusted publishing + provenance), **[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)** (v1.0.0 first stable), and **[CHANGELOG.md](./CHANGELOG.md)**.
 
 ---
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Secure npm publishing via GitHub Actions OIDC trusted publishing with `publishConfig.provenance` (supply-chain attestations)
 - Dispute handling for Razorpay and Stripe: fetch/list, accept/contest (Razorpay), evidence updates (Stripe), and normalized `dispute.*` webhook events
 - Entitlement side effects on `dispute.lost` (revoke) and `dispute.won` (restore)
 - Dispute testing fixtures (`createMockRazorpayDispute`, `createMockStripeDispute`)

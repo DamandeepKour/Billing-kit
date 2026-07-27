@@ -73,6 +73,20 @@ function validatePackageJson(pkg) {
     fail('publishConfig.access must be "public"');
   }
 
+  if (pkg.publishConfig?.provenance !== true) {
+    fail("publishConfig.provenance must be true (npm supply-chain attestations)");
+  }
+
+  const repositoryUrl = pkg.repository?.url;
+  if (
+    typeof repositoryUrl !== "string" ||
+    !repositoryUrl.includes("github.com/DamandeepKour/Billing-kit")
+  ) {
+    fail(
+      'repository.url must point at github.com/DamandeepKour/Billing-kit for provenance',
+    );
+  }
+
   if (!pkg.engines?.node) {
     fail("package.json engines.node is required");
   }

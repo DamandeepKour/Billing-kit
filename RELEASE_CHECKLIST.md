@@ -13,6 +13,8 @@ Registry: https://registry.npmjs.org/
 
 - [x] `package.json` / `package-lock.json` version set to `1.0.0`
 - [x] `publishConfig.access` is `"public"`
+- [x] `publishConfig.provenance` is `true`
+- [x] Publish workflow (`.github/workflows/publish.yml`) uses OIDC (`id-token: write`)
 - [x] `files` includes `dist`, `README.md`, `LICENSE`, `CHANGELOG.md`
 - [x] Exports defined for `.` and `./testing` (CJS + ESM + types)
 - [x] MIT `LICENSE` present
@@ -29,13 +31,15 @@ Registry: https://registry.npmjs.org/
 
 ---
 
-## Publish (not done yet — run manually when ready)
+## Publish (not done yet — run when ready; prefer OIDC + provenance)
 
-- [ ] `npm whoami` confirms an account with publish rights for `billing-kit`
-- [ ] Optional: reserve/confirm package name on npm if needed
+- [ ] On npmjs.com, configure **Trusted Publisher** → GitHub Actions → workflow `publish.yml` (repo `DamandeepKour/Billing-kit`)
+- [ ] Optional: GitHub Environment `npm` with required reviewers; tag protection for `v*`
+- [ ] Optional after first OIDC success: npm Publishing access → require 2FA and disallow tokens
 - [ ] Create annotated tag: `git tag -a v1.0.0 -m "v1.0.0"`
-- [ ] `npm publish` (runs `prepublishOnly` + `prepack`)
-- [ ] `git push origin main --follow-tags`
+- [ ] Push tag: `git push origin v1.0.0` (triggers Publish workflow — no local `npm publish`)
+- [ ] Confirm Publish workflow is green and version shows **Provenance** on npm
+- [ ] `git push origin main --follow-tags` if main / other tags still need pushing
 - [ ] Create GitHub Release for `v1.0.0` using the changelog section below
 - [ ] Verify: `npm view billing-kit version` → `1.0.0`
 - [ ] Smoke install in a scratch project: `npm install billing-kit@1.0.0`
@@ -53,18 +57,20 @@ chore: prepare v1.0.0 stable release
 EOF
 )"
 
-# Tag only when you are about to publish (do not push tag until publish succeeds)
+# Tag only when you are about to publish (do not push tag until ready)
 git tag -a v1.0.0 -m "v1.0.0"
 
-# Publish (THIS uploads to npm — run intentionally)
-npm publish
+# Pushing the tag runs .github/workflows/publish.yml (OIDC + provenance)
+git push origin main
+git push origin v1.0.0
 
-git push origin main --follow-tags
+# Watch the Publish workflow; do not run local `npm publish` for this path
+gh run watch
 
 gh release create v1.0.0 --title "v1.0.0" --notes-file - <<'EOF'
 See CHANGELOG.md section [1.0.0] for full notes.
 
-First stable release of billing-kit.
+First stable release of billing-kit (published with npm provenance).
 EOF
 ```
 
