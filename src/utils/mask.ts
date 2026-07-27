@@ -1,5 +1,5 @@
 const SENSITIVE_KEY_PATTERN =
-  /^(.*?)(password|passwd|secret|token|api[_-]?key|authorization|auth|cvv|cvc|pan|card[_-]?number|account[_-]?number|iban|ssn|webhook[_-]?secret|secret[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)(.*?)$/i;
+  /^(.*?)(password|passwd|secret|token|api[_-]?key|authorization|auth|cvv|cvc|pan|card[_-]?number|account[_-]?number|iban|ssn|webhook[_-]?secrets?|secret[_-]?key|private[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)(.*?)$/i;
 
 const CARD_LIKE = /\b(?:\d[ -]*?){13,19}\b/g;
 
@@ -36,6 +36,10 @@ function maskValue(value: unknown): unknown {
     if (isSensitiveKey(key)) {
       if (typeof nested === "string") {
         output[key] = maskString(nested);
+      } else if (Array.isArray(nested)) {
+        output[key] = nested.map((item) =>
+          typeof item === "string" ? maskString(item) : "[REDACTED]",
+        );
       } else if (nested === null || nested === undefined) {
         output[key] = nested;
       } else {

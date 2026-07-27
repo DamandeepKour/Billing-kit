@@ -58,6 +58,7 @@ import {
 } from "../../utils/dispute-status";
 import { mapRazorpaySubscriptionStatus } from "../../utils/subscription-status";
 import { normalizeRazorpayWebhook } from "../../utils/webhook-normalize";
+import { resolveWebhookSecrets } from "../../utils/webhook-secrets";
 import { calculateSplitAllocations } from "../../utils/split";
 
 type RazorpaySubscriptionEntity = {
@@ -510,21 +511,24 @@ export class RazorpayGateway implements PaymentGateway, RazorpayBillingProvider 
       });
   }
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
-    if (!this.config.webhookSecret) {
+    const secrets = resolveWebhookSecrets(this.config);
+    if (secrets.length === 0) {
       throw new WebhookVerificationError(
         "webhookSecret is required for Razorpay webhooks",
       );
     }
     const raw = typeof payload === "string" ? payload : Buffer.from(payload);
-    const expected = crypto
-      .createHmac("sha256", this.config.webhookSecret)
-      .update(raw)
-      .digest("hex");
-    if (!timingSafeEqualHex(expected, signature)) {
-      throw new WebhookVerificationError("Invalid Razorpay webhook signature");
+    for (const secret of secrets) {
+      const expected = crypto
+        .createHmac("sha256", secret)
+        .update(raw)
+        .digest("hex");
+      if (timingSafeEqualHex(expected, signature)) {
+        const body = typeof raw === "string" ? raw : raw.toString("utf8");
+        return normalizeRazorpayWebhook(body, this.name);
+      }
     }
-    const body = typeof raw === "string" ? raw : raw.toString("utf8");
-    return normalizeRazorpayWebhook(body, this.name);
+    throw new WebhookVerificationError("Invalid Razorpay webhook signature");
   }
 
   async createTransfer(input: CreateTransferInput): Promise<TransferResult> {

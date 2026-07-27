@@ -8,7 +8,7 @@ npm install billing-kit
 
 Requires **Node.js 18+**. TypeScript types are included.
 
-See [CHANGELOG.md](./CHANGELOG.md) for release history, [PUBLISHING.md](./PUBLISHING.md) for the maintainer release flow, and [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) for the v1.0.0 first-stable checklist.
+See [CHANGELOG.md](./CHANGELOG.md) for release history, [PUBLISHING.md](./PUBLISHING.md) for the maintainer release flow, [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) for the v1.0.0 first-stable checklist, and [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for webhook signature / secret-rotation issues.
 
 ---
 
@@ -158,7 +158,8 @@ const billing = new BillingKit({
 | `provider` | `"stripe" \| "razorpay"` | Payment provider |
 | `secretKey` | `string` | Stripe secret key or Razorpay key secret |
 | `keyId` | `string` | Razorpay key ID (required for Razorpay) |
-| `webhookSecret` | `string` | Webhook signing secret |
+| `webhookSecret` | `string` | Current webhook signing secret |
+| `webhookSecrets` | `string[]` | Previous secrets during rotation (retries) |
 | `currency` | `string` | Default ISO currency (`inr`, `usd`, …) |
 | `company` | `CompanyDetails` | Seller details for invoices / PDFs |
 | `tax` | `TaxConfig` | Default tax behavior |
@@ -366,6 +367,8 @@ Currency resolution order:
 
 Always verify signatures against the **raw request body** (not a re-serialized JSON object).
 `processWebhook` / `createWebhookHttpHandler` also **dedupe by event id** so duplicate provider deliveries are safe no-ops.
+
+After rotating a Razorpay (or Stripe) webhook secret, keep the previous value in `webhookSecrets` so in-flight retries still verify — see **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**.
 
 ### Express (recommended)
 
@@ -718,7 +721,7 @@ try {
 | `StripeAuthenticationError` | `STRIPE_AUTHENTICATION_ERROR` | Bad Stripe key |
 | `StripeInvalidRequestError` | `STRIPE_INVALID_REQUEST` | Invalid Stripe params |
 | `IdempotencyConflictError` | `IDEMPOTENCY_CONFLICT` | Key reused with different payload |
-| `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` | Bad signature |
+| `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` | Bad signature / raw body / secret rotation — see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | `InvoiceNotFoundError` | `INVOICE_NOT_FOUND` | Unknown invoice id |
 | `UnsupportedOperationError` | `UNSUPPORTED_OPERATION` | Provider does not support the call |
 

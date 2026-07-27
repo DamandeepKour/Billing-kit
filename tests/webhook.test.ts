@@ -81,6 +81,36 @@ describe("Razorpay webhook signature verification", () => {
     );
   });
 
+  it("accepts signatures signed with a previous secret during rotation", () => {
+    const previous = "old_webhook_secret";
+    const current = "new_webhook_secret";
+    const gw = new RazorpayGateway({
+      provider: "razorpay",
+      keyId: "rzp_test",
+      secretKey: keySecret,
+      webhookSecret: current,
+      webhookSecrets: [previous],
+    });
+    const body = JSON.stringify({
+      event: "payment.captured",
+      payload: {
+        payment: {
+          entity: {
+            id: "pay_rot",
+            amount: 100,
+            currency: "INR",
+            status: "captured",
+          },
+        },
+      },
+    });
+    const signedWithPrevious = generateRazorpayWebhookSignature(body, previous);
+    const signedWithCurrent = generateRazorpayWebhookSignature(body, current);
+
+    expect(gw.verifyWebhook(body, signedWithPrevious).entity.id).toBe("pay_rot");
+    expect(gw.verifyWebhook(body, signedWithCurrent).entity.id).toBe("pay_rot");
+  });
+
   it("rejects when body was mutated after signing (parse-then-stringify)", () => {
     const original = JSON.stringify({
       event: "payment.captured",

@@ -294,8 +294,10 @@ export {
   validateStripeSecretKey,
   validateTaxConfig,
   validateWebhookSecret,
+  validateWebhookSecrets,
 } from "./utils/validate-config";
 export type { ValidatedBillingKitConfig } from "./utils/validate-config";
+export { resolveWebhookSecrets } from "./utils/webhook-secrets";
 export { calculateFeeBreakdown, normalizeSettlementFields } from "./utils/settlement";
 export {
   calculatePlatformFee,

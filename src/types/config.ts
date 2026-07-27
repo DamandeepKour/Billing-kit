@@ -40,7 +40,16 @@ export interface BillingKitConfig {
   provider: BillingProvider;
   secretKey: string;
   keyId?: string;
+  /**
+   * Current webhook signing secret.
+   * Always verify against the **raw** request body (never re-serialized JSON).
+   */
   webhookSecret?: string;
+  /**
+   * Previous webhook secrets to accept during rotation.
+   * Razorpay (and Stripe) may retry deliveries signed with the old secret after you rotate.
+   */
+  webhookSecrets?: string[];
   currency?: string;
   company?: CompanyDetails;
   tax?: TaxConfig;

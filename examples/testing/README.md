@@ -20,3 +20,5 @@ Environment variables:
 | `STRIPE_WEBHOOK_SECRET` | Secret used to sign Stripe payloads |
 
 Always POST the **exact** raw body that was signed. Do not `JSON.parse` then re-stringify before verification.
+
+Production signature failures and secret rotation: see **[TROUBLESHOOTING.md](../../TROUBLESHOOTING.md)**.

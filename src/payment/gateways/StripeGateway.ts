@@ -52,6 +52,7 @@ import { normalizeCurrency } from "../../utils/currency";
 import { mapStripeDisputeStatus } from "../../utils/dispute-status";
 import { mapStripeError, withStripeErrors } from "../../utils/stripe-errors";
 import { normalizeStripeWebhook } from "../../utils/webhook-normalize";
+import { resolveWebhookSecrets } from "../../utils/webhook-secrets";
 const INTERVAL_MAP: Record<string, Stripe.Price.Recurring.Interval> = {
   monthly: "month",
   quarterly: "month",
@@ -691,28 +692,36 @@ export class StripeGateway implements PaymentGateway, StripeBillingProvider {
   }
 
   verifyWebhook(payload: string | Buffer, signature: string): WebhookEvent {
-    if (!this.config.webhookSecret) {
-      throw new WebhookVerificationError("webhookSecret is required for Stripe webhooks");
-    }
-    try {
-      const event = this.stripe.webhooks.constructEvent(
-        payload,
-        signature,
-        this.config.webhookSecret,
+    const secrets = resolveWebhookSecrets(this.config);
+    if (secrets.length === 0) {
+      throw new WebhookVerificationError(
+        "webhookSecret is required for Stripe webhooks",
       );
-      return normalizeStripeWebhook(
-        event.id,
-        event.type,
-        event.data.object,
-        this.name,
-        event.created,
-      );
-    } catch (error) {
-      mapStripeError(error);
     }
+
+    let lastError: unknown;
+    for (const secret of secrets) {
+      try {
+        const event = this.stripe.webhooks.constructEvent(
+          payload,
+          signature,
+          secret,
+        );
+        return normalizeStripeWebhook(
+          event.id,
+          event.type,
+          event.data.object,
+          this.name,
+          event.created,
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    mapStripeError(lastError);
   }
 }
-
 function mapStripeDispute(
   dispute: Stripe.Dispute,
   provider: string,

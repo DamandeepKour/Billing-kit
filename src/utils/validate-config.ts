@@ -103,6 +103,36 @@ export function validateWebhookSecret(
   return webhookSecret.trim();
 }
 
+export function validateWebhookSecrets(
+  webhookSecrets: unknown,
+): string[] | undefined {
+  if (webhookSecrets === undefined || webhookSecrets === null) {
+    return undefined;
+  }
+  if (!Array.isArray(webhookSecrets)) {
+    throw new InvalidConfigError(
+      "webhookSecrets must be an array of non-empty strings when provided",
+      { param: "webhookSecrets" },
+    );
+  }
+
+  const normalized: string[] = [];
+  for (let index = 0; index < webhookSecrets.length; index += 1) {
+    const value = webhookSecrets[index];
+    if (typeof value !== "string" || value.trim().length === 0) {
+      throw new InvalidConfigError(
+        "webhookSecrets must be an array of non-empty strings when provided",
+        { param: `webhookSecrets[${index}]` },
+      );
+    }
+    const trimmed = value.trim();
+    if (!normalized.includes(trimmed)) {
+      normalized.push(trimmed);
+    }
+  }
+  return normalized;
+}
+
 export function validateCurrencyConfig(
   currency: unknown,
 ): SupportedCurrency {
@@ -237,18 +267,26 @@ export function validateRetryConfig(retry: RetryPolicyConfig): RetryPolicyConfig
 }
 
 export function validateStripeConfig(
-  config: Pick<BillingKitConfig, "secretKey" | "webhookSecret">,
+  config: Pick<
+    BillingKitConfig,
+    "secretKey" | "webhookSecret" | "webhookSecrets"
+  >,
 ): void {
   validateStripeSecretKey(config.secretKey);
   validateWebhookSecret(config.webhookSecret, { provider: "stripe" });
+  validateWebhookSecrets(config.webhookSecrets);
 }
 
 export function validateRazorpayConfig(
-  config: Pick<BillingKitConfig, "keyId" | "secretKey" | "webhookSecret">,
+  config: Pick<
+    BillingKitConfig,
+    "keyId" | "secretKey" | "webhookSecret" | "webhookSecrets"
+  >,
 ): void {
   validateRazorpayKeyId(config.keyId);
   validateRazorpaySecretKey(config.secretKey);
   validateWebhookSecret(config.webhookSecret, { provider: "razorpay" });
+  validateWebhookSecrets(config.webhookSecrets);
 }
 
 /**
@@ -292,6 +330,7 @@ export function validateBillingKitConfig(
     secretKey: config.secretKey.trim(),
     keyId: config.keyId?.trim(),
     webhookSecret: config.webhookSecret?.trim(),
+    webhookSecrets: validateWebhookSecrets(config.webhookSecrets),
     currency,
   };
 }

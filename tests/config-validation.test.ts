@@ -76,6 +76,16 @@ describe("config validation / helpers", () => {
         validateStripeConfig({ secretKey: "sk_test_x", webhookSecret: "" }),
       ).toThrow(/webhookSecret/);
     });
+
+    it("rejects invalid webhookSecrets entries", () => {
+      expect(() =>
+        validateStripeConfig({
+          secretKey: "sk_test_x",
+          webhookSecret: "whsec_new",
+          webhookSecrets: ["ok", ""],
+        }),
+      ).toThrow(/webhookSecrets/);
+    });
   });
 
   describe("validateRazorpayConfig", () => {
