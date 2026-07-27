@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Provider diagnostics: `healthCheck()`, `verifyProviderConfig()`, and `runDiagnostics()` with structured checks, warnings, and provider-specific recommendations (no secret leakage)
 - Webhook troubleshooting guide (`TROUBLESHOOTING.md`) for raw-body verification and Razorpay secret-rotation retries
 - `webhookSecrets` config: accept previous signing secrets during rotation (Razorpay + Stripe)
 - Secure npm publishing via GitHub Actions OIDC trusted publishing with `publishConfig.provenance` (supply-chain attestations)

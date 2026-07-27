@@ -118,9 +118,15 @@ import type {
   TransferReversalResult,
   TransferResult,
 } from "../types/route";
+import type {
+  DiagnosticsReport,
+  HealthCheckResult,
+  ProviderConfigVerification,
+} from "../types/diagnostics";
 import { AuditLogService } from "../audit";
 import { CouponService } from "../coupon";
 import { CustomerProfileService } from "../customer";
+import { DiagnosticsService } from "../diagnostics";
 import { EntitlementService } from "../entitlement";
 import { InvoiceService } from "../invoice";
 import { InvoicePdfGenerator } from "../pdf";
@@ -183,11 +189,13 @@ export class BillingKit {
   private readonly auditLogService: AuditLogService;
   private readonly usageBillingService: UsageBillingService;
   private readonly entitlementService: EntitlementService;
+  private readonly diagnosticsService: DiagnosticsService;
   private readonly idempotencyRequests: IdempotencyRequestRepository;
   private readonly observability: ObservabilityService;
 
   constructor(config: BillingKitConfig) {
     this.config = validateBillingKitConfig(config);
+    this.diagnosticsService = new DiagnosticsService(this.config);
     const invoiceRepository =
       this.config.invoiceRepository ?? new InMemoryInvoiceRepository();
     const transactionRepository =
@@ -1396,6 +1404,28 @@ export class BillingKit {
         });
       },
     );
+  }
+
+  /**
+   * Lightweight provider readiness check (credentials, currency, webhook, repositories).
+   * Does not call provider network APIs and never returns raw secrets.
+   */
+  healthCheck(): HealthCheckResult {
+    return this.diagnosticsService.healthCheck();
+  }
+
+  /**
+   * Validate provider-specific config shape, currency, tax, and webhook settings.
+   */
+  verifyProviderConfig(): ProviderConfigVerification {
+    return this.diagnosticsService.verifyProviderConfig();
+  }
+
+  /**
+   * Full diagnostics report: health + config verification + provider recommendations.
+   */
+  runDiagnostics(): DiagnosticsReport {
+    return this.diagnosticsService.runDiagnostics();
   }
 }
 

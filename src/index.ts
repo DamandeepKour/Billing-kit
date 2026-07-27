@@ -59,6 +59,11 @@ export type {
   CustomerPaymentMethod,
   CustomerFeatureAccess,
   DetachPaymentMethodInput,
+  DiagnosticCheck,
+  DiagnosticCheckCategory,
+  DiagnosticCheckStatus,
+  DiagnosticsReport,
+  DiagnosticsStatus,
   Discount,
   DiscountLineItem,
   GenerateInvoiceInput,
@@ -67,6 +72,7 @@ export type {
   GenerateUsageInvoiceResult,
   GetSettlementDetailsInput,
   GSTInput,
+  HealthCheckResult,
   IdempotencyRequestFilter,
   IdempotencyRequestKind,
   IdempotencyRequestRecord,
@@ -97,6 +103,7 @@ export type {
   PricedUsage,
   ProcessWebhookResult,
   PromotionCode,
+  ProviderConfigVerification,
   ProviderCustomer,
   ProviderInvoice,
   RawWebhookRequest,
@@ -191,6 +198,11 @@ export {
   profileToCustomer,
 } from "./types";
 export { AuditLogService } from "./audit";
+export {
+  DiagnosticsService,
+  conditionalRecommendations,
+  providerRecommendations,
+} from "./diagnostics";
 export {
   ConsoleLogger,
   NoopLogger,

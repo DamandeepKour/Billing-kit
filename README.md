@@ -25,6 +25,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release history, [PUBLISHING.md](./PUBLIS
 - **Pluggable storage** — inject your own invoice / transaction / webhook repositories
 - **Idempotency** — safe retries for payments, refunds, and Route transfers
 - **Observability** — structured logger, success/failure hooks, audit correlation fields
+- **Diagnostics** — `healthCheck`, `verifyProviderConfig`, and `runDiagnostics` (no secret leakage)
 - **Error normalization** — `BillingAuthError`, `BillingValidationError`, `BillingRetryableError`
 
 ---
@@ -670,6 +671,39 @@ Available repository hooks on config:
 
 ---
 
+## Diagnostics example
+
+Offline provider readiness checks — no network calls, and secrets are never returned in the result.
+
+```typescript
+import { BillingKit } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET,
+  currency: "inr",
+  tax: { enabled: true, taxType: "gst", sellerState: "MH" },
+});
+
+const health = billing.healthCheck();
+// health.status: "healthy" | "degraded" | "unhealthy"
+
+const config = billing.verifyProviderConfig();
+// config.valid === false only when there are failing checks
+
+const report = billing.runDiagnostics();
+console.log(report.status, report.errors, report.warnings);
+console.log(report.recommendations);
+// Razorpay: HTTPS, TLS 1.2+, raw-body signatures, secret rotation, IP allowlisting, …
+// Stripe: credential scope, whsec_ webhook secret, raw-body verify, test/live separation, …
+```
+
+Use `runDiagnostics()` in boot scripts or admin endpoints. Prefer `healthCheck()` for lightweight readiness probes.
+
+---
+
 ## Error handling
 
 All SDK errors extend `BillingKitError` and expose a stable `code`. Provider failures may also include `requestId`, `providerCode`, `provider`, and `statusCode`.
@@ -827,6 +861,16 @@ formatAmount(99900, "inr"); // "₹999.00"
 | `listWebhookEvents()` | Persisted webhook records |
 
 Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookRequest()`, `normalizeStripeWebhook()` / `normalizeRazorpayWebhook()`, `EXPRESS_WEBHOOK_RAW_BODY`.
+
+### Diagnostics
+
+| Method | Description |
+|--------|-------------|
+| `healthCheck()` | Credentials, currency, webhook presence, repositories |
+| `verifyProviderConfig()` | Provider shape, tax, currency, webhook config |
+| `runDiagnostics()` | Full report + provider recommendations |
+
+Results include `status`, `checks`, `errors`, `warnings`, and `recommendations`. Secrets are masked/omitted.
 
 ### Stripe billing helpers
 

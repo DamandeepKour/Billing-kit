@@ -214,6 +214,15 @@ export type {
   RecordBillingEventInput,
 } from "./audit";
 export type {
+  DiagnosticCheck,
+  DiagnosticCheckCategory,
+  DiagnosticCheckStatus,
+  DiagnosticsReport,
+  DiagnosticsStatus,
+  HealthCheckResult,
+  ProviderConfigVerification,
+} from "./diagnostics";
+export type {
   BillingObservabilityEvent,
   BillingObservabilityEventName,
   BillingObservabilityHooks,
