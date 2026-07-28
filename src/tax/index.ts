@@ -4,4 +4,12 @@ export {
   calculateGST,
   calculateVAT,
   calculateSalesTax,
+  calculateLineItemTaxes,
+  summarizeTax,
+  detectTaxType,
+  defaultRateFor,
+  isEuCountry,
+  normalizeRegionCode,
+  EU_VAT_RATES,
+  US_SALES_TAX_RATES,
 } from "./TaxEngine";

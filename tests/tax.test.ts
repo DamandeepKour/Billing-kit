@@ -146,15 +146,17 @@ describe("tax / GST (India)", () => {
       expect(result.taxLines).toEqual([]);
     });
 
-    it("defaults missing rate to 0", () => {
+    it("defaults missing rate to standard 18% GST", () => {
       const result = calculateGST({
         amount: 10000,
         sellerState: "MH",
         buyerState: "MH",
       });
 
-      expect(result.taxPercent).toBe(0);
-      expect(result.totalTax).toBe(0);
+      expect(result.taxPercent).toBe(18);
+      expect(result.totalTax).toBe(1800);
+      expect(result.cgst).toBe(900);
+      expect(result.sgst).toBe(900);
     });
 
     it("rejects negative amount", () => {
@@ -165,7 +167,7 @@ describe("tax / GST (India)", () => {
           sellerState: "MH",
           buyerState: "MH",
         }),
-      ).toThrow("Amount and rate must be non-negative");
+      ).toThrow(/amount must be a non-negative/);
     });
 
     it("rejects negative rate", () => {
@@ -176,7 +178,7 @@ describe("tax / GST (India)", () => {
           sellerState: "MH",
           buyerState: "MH",
         }),
-      ).toThrow("Amount and rate must be non-negative");
+      ).toThrow(/rate must be a non-negative/);
     });
   });
 });
@@ -245,7 +247,7 @@ describe("tax / VAT", () => {
 
   it("rejects negative amount", () => {
     expect(() => calculateVAT({ amount: -100, rate: 20 })).toThrow(
-      "Amount and rate must be non-negative",
+      /amount must be a non-negative/,
     );
   });
 });
@@ -270,7 +272,7 @@ describe("tax / sales tax (generic US)", () => {
   it("uses 0% for unknown US states", () => {
     const result = calculateSalesTax({
       amount: 10000,
-      state: "WY",
+      state: "XX",
       country: "US",
     });
 
@@ -385,7 +387,7 @@ describe("tax / TaxEngine", () => {
     it("rejects negative amount before tax routing", () => {
       expect(() =>
         engine.calculate({ amount: -1, autoTax: true, country: "DE" }),
-      ).toThrow("Amount and rate must be non-negative");
+      ).toThrow(/amount must be a non-negative/);
     });
   });
 });
@@ -418,5 +420,46 @@ describe("tax / TaxService facade", () => {
     });
 
     expect(result.vat).toBe(2000);
+  });
+
+  it("summarizes tax breakdowns for invoices", () => {
+    const breakdown = service.calculateGST({
+      amount: 10000,
+      rate: 18,
+      sellerState: "MH",
+      buyerState: "KA",
+      customerTaxId: "29AAAAA0000A1Z5",
+    });
+    const summary = service.summarize(breakdown);
+
+    expect(summary).toMatchObject({
+      taxType: "gst",
+      igst: 1800,
+      customerTaxId: "29AAAAA0000A1Z5",
+      totalTax: 1800,
+    });
+    expect(summary.taxLines).toEqual([
+      { name: "IGST", rate: 18, amount: 1800 },
+    ]);
+  });
+
+  it("calculates per-line taxes and rolls up", () => {
+    const { lines, summary } = service.calculateLineItems({
+      lineItems: [
+        { id: "a", amount: 10000, taxRate: 18 },
+        { id: "b", amount: 5000, taxRate: 5 },
+      ],
+      base: {
+        taxType: "gst",
+        sellerState: "MH",
+        buyerState: "MH",
+        country: "IN",
+      },
+    });
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]?.tax.cgst).toBe(900);
+    expect(lines[1]?.tax.totalTax).toBe(250);
+    expect(summary.totalTax).toBe(2050);
   });
 });

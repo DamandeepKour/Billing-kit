@@ -102,6 +102,8 @@ export type {
   TaxBreakdown,
   TaxCalculationInput,
   TaxLine,
+  TaxLineItemBreakdown,
+  TaxSummary,
   TaxType,
   VATInput,
 } from "./tax";

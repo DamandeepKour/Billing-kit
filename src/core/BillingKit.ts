@@ -70,7 +70,15 @@ import type {
   UpdatePlanInput,
   UsageRecord,
 } from "../types/subscription";
-import type { GSTInput, TaxBreakdown, TaxCalculationInput, VATInput } from "../types/tax";
+import type {
+  GSTInput,
+  SalesTaxInput,
+  TaxBreakdown,
+  TaxCalculationInput,
+  TaxSummary,
+  VATInput,
+} from "../types/tax";
+import { summarizeTax } from "../tax";
 import type { RecordTransactionInput, Transaction } from "../types/transaction";
 import type { ReportingFilter } from "../types/settlement";
 import type {
@@ -860,6 +868,27 @@ export class BillingKit {
     return breakdown;
   }
 
+  calculateSalesTax(input: SalesTaxInput): TaxBreakdown {
+    const breakdown = this.taxService.calculateSalesTax({
+      ...input,
+      rate: input.rate ?? this.config.tax?.defaultRate,
+    });
+    this.queueAudit({
+      action: "tax.calculated",
+      resourceType: "tax",
+      resourceId: `sales_tax_${Date.now()}`,
+      payload: {
+        taxType: "sales_tax",
+        amount: input.amount,
+        totalTax: breakdown.totalTax,
+        total: breakdown.total,
+        taxPercent: breakdown.taxPercent,
+        state: input.state,
+      },
+    });
+    return breakdown;
+  }
+
   calculateTax(input: TaxCalculationInput): TaxBreakdown {
     const breakdown = this.taxService.calculate({
       ...input,
@@ -881,6 +910,17 @@ export class BillingKit {
       },
     });
     return breakdown;
+  }
+
+  /** Compact tax summary from a breakdown (invoice / receipt friendly). */
+  summarizeTax(breakdown: TaxBreakdown): TaxSummary {
+    return summarizeTax(breakdown);
+  }
+
+  /** Tax summary for a persisted invoice. */
+  async getInvoiceTaxSummary(invoiceId: string): Promise<TaxSummary> {
+    const summary = await this.invoiceService.getInvoiceSummary(invoiceId);
+    return summarizeTax(summary.tax);
   }
 
   applyCoupon(input: ApplyCouponInput): CouponResult {

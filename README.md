@@ -268,7 +268,9 @@ if (valid) {
 
 ---
 
-## GST / VAT tax example
+## GST / VAT / sales tax example
+
+billing-kit includes a tax engine for **GST** (India), **VAT** (EU and other), and **regional sales tax** (US). Amounts are in smallest currency units.
 
 ```typescript
 import { BillingKit } from "billing-kit";
@@ -277,7 +279,14 @@ const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
   currency: "inr",
-  tax: { enabled: true, sellerState: "MH", sellerCountry: "IN" },
+  tax: {
+    enabled: true,
+    autoTax: true, // detect GST / VAT / sales tax from country
+    defaultRate: 18,
+    taxType: "gst",
+    sellerState: "MH",
+    sellerCountry: "IN",
+  },
 });
 
 // Intra-state GST → CGST + SGST
@@ -285,8 +294,9 @@ const intra = billing.calculateGST({
   amount: 10000, // ₹100.00
   sellerState: "MH",
   buyerState: "MH",
+  customerTaxId: "27AAAAA0000A1Z5",
 });
-// intra.lines → CGST 9% + SGST 9%
+// intra.taxLines → CGST 9% + SGST 9%
 
 // Inter-state GST → IGST
 const inter = billing.calculateGST({
@@ -294,18 +304,45 @@ const inter = billing.calculateGST({
   sellerState: "MH",
   buyerState: "KA",
 });
-// inter.lines → IGST 18%
+// inter.taxLines → IGST 18%
 
-// VAT
+// VAT (explicit) + reverse charge for EU B2B with tax ID
 const vat = billing.calculateVAT({
   amount: 10000,
   rate: 20,
   country: "IE",
 });
+const reverse = billing.calculateVAT({
+  amount: 10000,
+  rate: 20,
+  country: "DE",
+  isBusinessCustomer: true,
+  customerTaxId: "DE123456789",
+});
+// reverse.reverseCharge === true, totalTax === 0
 
-// Invoice with tax applied
+// US sales tax (region table, or pass rate)
+const sales = billing.calculateSalesTax({
+  amount: 10000,
+  state: "CA",
+  country: "US",
+});
+
+// Auto tax from country
+const auto = billing.calculateTax({
+  amount: 10000,
+  autoTax: true,
+  country: "DE", // → VAT @ 19%
+});
+
+// Invoice applies tax + exposes summary
 const invoice = await billing.generateInvoice({
-  customer: { name: "Acme", gstin: "29AAAAA0000A1Z5", isBusinessCustomer: true },
+  customer: {
+    name: "Acme",
+    gstin: "29AAAAA0000A1Z5",
+    customerTaxId: "29AAAAA0000A1Z5",
+    isBusinessCustomer: true,
+  },
   billingAddress: {
     line1: "1 Residency Road",
     city: "Bengaluru",
@@ -318,8 +355,19 @@ const invoice = await billing.generateInvoice({
   sellerState: "MH",
 });
 
-console.log(invoice.tax.total, invoice.total);
+console.log(invoice.tax.taxLines, invoice.tax.totalTax, invoice.total);
+const taxSummary = await billing.getInvoiceTaxSummary(invoice.id);
+// taxSummary → taxType, taxLines, cgst/sgst/igst or vat/salesTax, totals
 ```
+
+**Rules of thumb**
+
+| Mode | Trigger |
+|------|---------|
+| GST | `taxType: "gst"` or `autoTax` + `country: "IN"` |
+| VAT | `taxType: "vat"` or `autoTax` + EU (or other non-US) country |
+| Sales tax | `taxType: "sales_tax"` or `autoTax` + `country: "US"` |
+| Reverse charge | VAT + `isBusinessCustomer` + `customerTaxId` |
 
 ---
 
@@ -909,9 +957,12 @@ assertSmallestUnitAmount(4900, { currency: "usd" }); // ok
 
 | Method | Description |
 |--------|-------------|
-| `calculateGST(input)` | India GST breakdown |
-| `calculateVAT(input)` | VAT breakdown |
-| `calculateTax(input)` | Generic tax engine |
+| `calculateGST(input)` | India GST breakdown (CGST/SGST or IGST) |
+| `calculateVAT(input)` | VAT breakdown (+ reverse charge) |
+| `calculateSalesTax(input)` | Regional sales tax |
+| `calculateTax(input)` | Generic engine (`autoTax` + region rules) |
+| `summarizeTax(breakdown)` | Compact invoice tax summary |
+| `getInvoiceTaxSummary(id)` | Tax summary for a saved invoice |
 
 ### Webhooks
 

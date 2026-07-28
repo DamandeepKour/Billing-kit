@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Tax engine enhancements: region detection, sales-tax facade, invoice tax summaries, line-item tax rollups, customer tax ID on breakdowns, `BillingValidationError` for invalid amounts/rates
 - Multi-currency hardening: `assertSmallestUnitAmount`, `assertLineItemCurrencies`, `convertAmount`, `getMinorUnitFactor`, `listSupportedCurrencies`; invoice/payment smallest-unit validation; customer profile currency checks
 - Framework examples for Express, Next.js (App Router), and NestJS (module/service/controller) with payments, invoices, refunds, and raw-body webhooks
 - Provider diagnostics: `healthCheck()`, `verifyProviderConfig()`, and `runDiagnostics()` with structured checks, warnings, and provider-specific recommendations (no secret leakage)
