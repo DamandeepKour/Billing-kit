@@ -16,11 +16,16 @@ import { profileToCustomer } from "../types/customer-profile";
 import { TaxEngine } from "../tax/TaxEngine";
 import {
   BillingKitError,
-  CurrencyMismatchError,
+  BillingValidationError,
   InvoiceNotFoundError,
 } from "../utils/errors";
 import { generateId } from "../utils/id";
-import { normalizeCurrency, resolveCurrency, roundAmount } from "../utils/currency";
+import {
+  assertLineItemCurrencies,
+  assertSmallestUnitAmount,
+  resolveCurrency,
+  roundAmount,
+} from "../utils/currency";
 
 export class InvoiceNumberGenerator {
   private counter = 0;
@@ -75,20 +80,6 @@ function applyManualDiscounts(
   return { total, lines };
 }
 
-function assertLineItemCurrencyConsistency(
-  lineItems: LineItem[],
-  invoiceCurrency: string,
-): void {
-  for (const item of lineItems) {
-    if (!item.currency) continue;
-    if (normalizeCurrency(item.currency) !== invoiceCurrency) {
-      throw new CurrencyMismatchError(
-        `Line item currency "${item.currency}" does not match invoice currency "${invoiceCurrency}"`,
-      );
-    }
-  }
-}
-
 export class InvoiceService {
   private readonly taxEngine = new TaxEngine();
   private readonly numberGenerator = new InvoiceNumberGenerator();
@@ -107,7 +98,24 @@ export class InvoiceService {
       customerDefault: resolved.customer.defaultCurrency,
       configDefault: this.config.currency,
     });
-    assertLineItemCurrencyConsistency(input.lineItems, currency);
+    assertLineItemCurrencies(input.lineItems, currency);
+    for (let index = 0; index < input.lineItems.length; index += 1) {
+      const item = input.lineItems[index];
+      assertSmallestUnitAmount(item.unitAmount, {
+        param: `lineItems[${index}].unitAmount`,
+        currency,
+      });
+      if (
+        typeof item.quantity !== "number" ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity <= 0
+      ) {
+        throw new BillingValidationError(
+          `lineItems[${index}].quantity must be a positive integer`,
+          { param: `lineItems[${index}].quantity` },
+        );
+      }
+    }
 
     const subtotal = sumLineItems(input.lineItems);
     const manual = applyManualDiscounts(subtotal, input.discounts);

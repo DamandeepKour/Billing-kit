@@ -21,7 +21,7 @@ import type {
   PaymentResult,
   RefundResult,
 } from "../types/payment";
-import { resolveCurrency } from "../utils/currency";
+import { resolveCurrency, assertSmallestUnitAmount } from "../utils/currency";
 import {
   executeIdempotentRequest,
   generateIdempotencyKey,
@@ -87,6 +87,10 @@ export class PaymentService {
       const currency = resolveCurrency({
         override: currencyOverride,
         configDefault: this.defaultCurrency,
+      });
+      assertSmallestUnitAmount(input.amount, {
+        param: "amount",
+        currency,
       });
 
       let amount = input.amount;

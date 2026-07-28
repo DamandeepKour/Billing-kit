@@ -282,16 +282,22 @@ export {
 export type { BackoffRetryOptions } from "./utils/retry-backoff";
 export {
   SUPPORTED_CURRENCIES,
+  assertLineItemCurrencies,
+  assertSmallestUnitAmount,
   assertSupportedCurrency,
+  convertAmount,
   convertSmallestUnit,
   formatAmount,
   fromMinorUnits,
+  getMinorUnitFactor,
   isSupportedCurrency,
+  listSupportedCurrencies,
   normalizeCurrency,
   resolveCurrency,
+  roundAmount,
   toMinorUnits,
 } from "./utils/currency";
-export type { SupportedCurrency } from "./utils/currency";
+export type { CurrencyLineItem, SupportedCurrency } from "./utils/currency";
 export {
   assertNonEmptyString,
   validateBillingKitConfig,
