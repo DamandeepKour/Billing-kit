@@ -7,7 +7,7 @@ import {
   Param,
   Post,
 } from "@nestjs/common";
-import { BillingKitError } from "billing-kit";
+import { BillingKitError, type GenerateInvoiceInput } from "billing-kit";
 import { BillingService } from "./billing.service";
 
 @Controller("billing")
@@ -53,19 +53,7 @@ export class BillingController {
   }
 
   @Post("invoices")
-  async createInvoice(
-    @Body()
-    body: {
-      customer: { name: string; email?: string };
-      billingAddress?: Record<string, string>;
-      lineItems: Array<{
-        description: string;
-        quantity: number;
-        unitAmount: number;
-      }>;
-      notes?: string;
-    },
-  ) {
+  async createInvoice(@Body() body: GenerateInvoiceInput) {
     try {
       if (!body?.customer?.name || !Array.isArray(body.lineItems)) {
         throw new HttpException(
@@ -73,7 +61,7 @@ export class BillingController {
           HttpStatus.BAD_REQUEST,
         );
       }
-      return await this.billing.generateInvoice(body as never);
+      return await this.billing.generateInvoice(body);
     } catch (error) {
       this.rethrow(error);
     }

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const request = billing.parseWebhookRequest({
+    const webhookRequest = billing.parseWebhookRequest({
       rawBody,
       headers: {
         "x-razorpay-signature": signature,
@@ -30,9 +30,12 @@ export async function POST(request: Request) {
       eventId,
     });
 
-    const result = await billing.processWebhook(request, async (event) => {
-      await handleBillingWebhookEvent(event);
-    });
+    const result = await billing.processWebhook(
+      webhookRequest,
+      async (event) => {
+        await handleBillingWebhookEvent(event);
+      },
+    );
 
     return NextResponse.json({
       ok: true,

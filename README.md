@@ -10,6 +10,8 @@ Requires **Node.js 18+**. TypeScript types are included.
 
 See [CHANGELOG.md](./CHANGELOG.md) for release history, [PUBLISHING.md](./PUBLISHING.md) for the maintainer release flow, [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) for the v1.0.0 first-stable checklist, and [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for webhook signature / secret-rotation issues.
 
+Framework integration examples: [Express](./examples/express/), [Next.js](./examples/nextjs/), [NestJS](./examples/nestjs/) — see [examples/README.md](./examples/README.md).
+
 ---
 
 ## Features
@@ -51,6 +53,18 @@ Webhook test helpers (optional):
 ```typescript
 import { createMockStripeEvent, signStripePayload } from "billing-kit/testing";
 ```
+
+---
+
+## Framework examples
+
+| Framework | Path | Notes |
+|-----------|------|--------|
+| Express | [examples/express](./examples/express/) | Raw-body webhooks via `createRawBodyMiddleware()` |
+| Next.js | [examples/nextjs](./examples/nextjs/) | App Router route handlers + `request.text()` |
+| NestJS | [examples/nestjs](./examples/nestjs/) | Module / service / controller |
+
+Each includes `.env.example` plus payment, invoice, refund, and webhook samples. Index: [examples/README.md](./examples/README.md).
 
 ---
 

@@ -19,8 +19,12 @@ export async function POST(request: Request) {
   }
 
   try {
+    const webhookRequest = billing.parseWebhookRequest({
+      rawBody,
+      headers: { "stripe-signature": signature },
+    });
     const result = await billing.processWebhook(
-      { rawBody, signature },
+      webhookRequest,
       async (event) => {
         await handleBillingWebhookEvent(event);
       },
