@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Multi-currency hardening: `assertSmallestUnitAmount`, `assertLineItemCurrencies`, `convertAmount`, `getMinorUnitFactor`, `listSupportedCurrencies`; invoice/payment smallest-unit validation; customer profile currency checks
 - Framework examples for Express, Next.js (App Router), and NestJS (module/service/controller) with payments, invoices, refunds, and raw-body webhooks
 - Provider diagnostics: `healthCheck()`, `verifyProviderConfig()`, and `runDiagnostics()` with structured checks, warnings, and provider-specific recommendations (no secret leakage)
 - Webhook troubleshooting guide (`TROUBLESHOOTING.md`) for raw-body verification and Razorpay secret-rotation retries

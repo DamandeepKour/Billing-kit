@@ -327,15 +327,21 @@ console.log(invoice.tax.total, invoice.total);
 
 Supported currencies: **`inr`**, **`usd`**, **`eur`**, **`gbp`**, **`aed`**, **`sgd`**.
 
+All API amounts are **integers in the smallest unit** (paise / cents). Use the helpers below to convert and format.
+
 ```typescript
 import {
   BillingKit,
   toMinorUnits,
   fromMinorUnits,
   formatAmount,
+  convertAmount,
   convertSmallestUnit,
+  resolveCurrency,
+  assertLineItemCurrencies,
 } from "billing-kit";
 
+// Global default currency
 const billing = new BillingKit({
   provider: "stripe",
   secretKey: process.env.STRIPE_SECRET_KEY!,
@@ -345,8 +351,10 @@ const billing = new BillingKit({
 toMinorUnits(49, "usd"); // 4900
 fromMinorUnits(4900, "usd"); // 49
 formatAmount(4900, "usd"); // "$49.00"
-convertSmallestUnit(4900, "usd"); // 49 (alias-friendly helper)
+convertSmallestUnit(99900, "inr"); // 999
+convertAmount({ amount: 10000, from: "inr", to: "usd", rate: 0.012 }); // 120
 
+// Per-invoice override (ignores global "usd")
 const usdInvoice = await billing.generateInvoice({
   currency: "usd",
   customer: { name: "US Buyer", email: "us@example.com" },
@@ -357,24 +365,58 @@ const usdInvoice = await billing.generateInvoice({
     postalCode: "94105",
     country: "US",
   },
-  lineItems: [{ description: "Pro", quantity: 1, unitAmount: 4900 }],
+  lineItems: [
+    { description: "Pro", quantity: 1, unitAmount: 4900, currency: "usd" },
+  ],
   taxMode: "none",
 });
 
+// Customer default currency (when invoice/payment currency is omitted)
+const eurInvoice = await billing.generateInvoice({
+  customer: { name: "EU Buyer", defaultCurrency: "eur" },
+  billingAddress: {
+    line1: "1 Grafton St",
+    city: "Dublin",
+    state: "D",
+    postalCode: "D02",
+    country: "IE",
+  },
+  lineItems: [{ description: "Seat", quantity: 1, unitAmount: 1999 }],
+  taxMode: "none",
+});
+
+// Per-payment override
 const inrPayment = await billing.createPayment({
-  amount: 99900,
+  amount: toMinorUnits(999, "inr"),
   currency: "inr",
-  presentmentCurrency: "inr",
-  settlementCurrency: "usd",
+});
+
+// Or via customer profile defaultCurrency
+const profile = await billing.createCustomerProfile({
+  name: "EU Buyer",
+  defaultCurrency: "eur",
+  billingAddress: {
+    line1: "1 Grafton St",
+    city: "Dublin",
+    state: "D",
+    postalCode: "D02",
+    country: "IE",
+  },
+});
+await billing.createPayment({
+  amount: 2000,
+  customerProfileId: profile.id, // resolves to eur
 });
 ```
 
 Currency resolution order:
 
-1. Explicit `currency` on the call  
-2. Customer / profile default (invoices)  
+1. Explicit `currency` on the call (invoice / payment)  
+2. Customer `defaultCurrency` or profile `defaultCurrency`  
 3. `BillingKit` config `currency`  
 4. Fallback: `inr`
+
+Line items that set `currency` must match the resolved invoice currency (mixed currencies throw `CurrencyMismatchError`).
 
 ---
 
@@ -793,11 +835,20 @@ All monetary amounts in this SDK are **integers in the smallest currency unit**:
 Helpers:
 
 ```typescript
-import { toMinorUnits, fromMinorUnits, formatAmount } from "billing-kit";
+import {
+  toMinorUnits,
+  fromMinorUnits,
+  formatAmount,
+  convertAmount,
+  getMinorUnitFactor,
+  assertSmallestUnitAmount,
+} from "billing-kit";
 
 toMinorUnits(999, "inr"); // 99900
 fromMinorUnits(99900, "inr"); // 999
 formatAmount(99900, "inr"); // "₹999.00"
+getMinorUnitFactor("eur"); // 100
+assertSmallestUnitAmount(4900, { currency: "usd" }); // ok
 ```
 
 ---

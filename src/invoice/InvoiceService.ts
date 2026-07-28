@@ -23,6 +23,7 @@ import { generateId } from "../utils/id";
 import {
   assertLineItemCurrencies,
   assertSmallestUnitAmount,
+  normalizeCurrency,
   resolveCurrency,
   roundAmount,
 } from "../utils/currency";

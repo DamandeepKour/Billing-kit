@@ -11,7 +11,7 @@ import type {
 } from "../types/customer-profile";
 import { BillingKitError } from "../utils/errors";
 import { generateId } from "../utils/id";
-import { normalizeCurrency } from "../utils/currency";
+import { assertSupportedCurrency } from "../utils/currency";
 
 export class CustomerProfileNotFoundError extends BillingKitError {
   constructor(id: string) {
@@ -67,7 +67,7 @@ export class CustomerProfileService {
       isBusinessCustomer: input.isBusinessCustomer,
       billingAddress: input.billingAddress,
       defaultCurrency: input.defaultCurrency
-        ? normalizeCurrency(input.defaultCurrency)
+        ? assertSupportedCurrency(input.defaultCurrency)
         : undefined,
       paymentPreferences: {
         allowAutoCharge: input.paymentPreferences?.allowAutoCharge ?? false,
@@ -103,7 +103,7 @@ export class CustomerProfileService {
       isBusinessCustomer: input.isBusinessCustomer ?? existing.isBusinessCustomer,
       billingAddress: input.billingAddress ?? existing.billingAddress,
       defaultCurrency: input.defaultCurrency
-        ? normalizeCurrency(input.defaultCurrency)
+        ? assertSupportedCurrency(input.defaultCurrency)
         : existing.defaultCurrency,
       paymentPreferences: {
         ...existing.paymentPreferences,
