@@ -103,7 +103,7 @@ describe("RetryService state transitions", () => {
     const dueBeforeGrace = await service.processDueRetries(
       new Date(t0.getTime() + 4000),
     );
-    expect(dueBeforeGrace).toHaveLength(0);
+    expect(dueBeforeGrace.dueRetries).toHaveLength(0);
 
     await service.processDueRetries(new Date(t0.getTime() + 3000 + 5000));
     const final = await service.getAttemptByReference("inv_1", "invoice");
@@ -194,11 +194,11 @@ describe("RetryService state transitions", () => {
     });
 
     const notYet = await service.processDueRetries(new Date(t0.getTime() + 5_000));
-    expect(notYet).toHaveLength(0);
+    expect(notYet.dueRetries).toHaveLength(0);
 
     const due = await service.processDueRetries(new Date(t0.getTime() + 10_000));
-    expect(due).toHaveLength(1);
-    expect(due[0]?.referenceId).toBe("pi_due");
+    expect(due.dueRetries).toHaveLength(1);
+    expect(due.dueRetries[0]?.referenceId).toBe("pi_due");
   });
 });
 
@@ -267,5 +267,110 @@ describe("BillingKit retry integration", () => {
 
     synced = await billing.getInvoice(invoice.id);
     expect(synced?.status).toBe("recovered");
+  });
+
+  it("runs a full payment recovery workflow with hooks", async () => {
+    const hooks: string[] = [];
+    const billing = new BillingKit({
+      provider: "stripe",
+      secretKey: "sk_test_recovery",
+      retry: {
+        maxRetries: 2,
+        retryIntervalsMs: [1_000, 2_000],
+        gracePeriodMs: 5_000,
+      },
+      retryHooks: {
+        onPaymentFailed: async () => {
+          hooks.push("failed");
+        },
+        onRetryScheduled: async () => {
+          hooks.push("scheduled");
+        },
+        onPaymentRecovered: async () => {
+          hooks.push("recovered");
+        },
+      },
+    });
+
+    const t0 = new Date("2026-07-01T00:00:00.000Z");
+    await billing.openBillingAttempt({
+      kind: "payment",
+      referenceId: "pi_workflow",
+      customerId: "cus_1",
+      amount: 4900,
+      currency: "usd",
+      now: t0,
+    });
+
+    const first = await billing.reportBillingFailure({
+      kind: "payment",
+      referenceId: "pi_workflow",
+      reason: "card_declined",
+      now: t0,
+    });
+    expect(first.status).toBe("retrying");
+    expect(first.attemptCount).toBe(1);
+
+    const due = await billing.processDueRetries(
+      new Date(t0.getTime() + 1_000),
+    );
+    expect(due).toHaveLength(1);
+    expect(due[0]?.referenceId).toBe("pi_workflow");
+
+    // Simulate a successful re-charge for the due retry
+    const recovered = await billing.reportBillingRecovered({
+      referenceId: "pi_workflow",
+      kind: "payment",
+    });
+    expect(recovered.status).toBe("recovered");
+    expect(hooks).toEqual(["failed", "scheduled", "recovered"]);
+  });
+
+  it("marks invoice uncollectible after grace via runRecoveryCycle", async () => {
+    const billing = new BillingKit({
+      provider: "stripe",
+      secretKey: "sk_test_grace",
+      retry: {
+        maxRetries: 1,
+        retryIntervalsMs: [100],
+        gracePeriodMs: 1_000,
+      },
+    });
+
+    const invoice = await billing.generateInvoice({
+      customer: { name: "Grace" },
+      billingAddress: {
+        line1: "1 Main",
+        city: "Mumbai",
+        state: "MH",
+        postalCode: "400001",
+        country: "IN",
+      },
+      lineItems: [{ description: "Plan", quantity: 1, unitAmount: 1000 }],
+      taxType: "none",
+    });
+
+    const t0 = new Date("2026-08-01T00:00:00.000Z");
+    await billing.reportBillingFailure({
+      kind: "invoice",
+      referenceId: invoice.id,
+      now: t0,
+    });
+    await billing.reportBillingFailure({
+      kind: "invoice",
+      referenceId: invoice.id,
+      now: new Date(t0.getTime() + 100),
+    });
+
+    const mid = await billing.getInvoice(invoice.id);
+    expect(mid?.status).toBe("failed");
+
+    const cycle = await billing.runRecoveryCycle(
+      new Date(t0.getTime() + 100 + 1_000),
+    );
+    expect(cycle.markedUncollectible).toHaveLength(1);
+
+    const final = await billing.getInvoice(invoice.id);
+    expect(final?.status).toBe("uncollectible");
   });
 });

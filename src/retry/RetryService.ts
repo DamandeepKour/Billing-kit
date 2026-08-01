@@ -173,8 +173,11 @@ export class RetryService {
     return saved;
   }
 
-  async processDueRetries(now = new Date()): Promise<BillingRetryAttempt[]> {
-    const due = await this.repository.list({
+  async processDueRetries(now = new Date()): Promise<{
+    dueRetries: BillingRetryAttempt[];
+    markedUncollectible: BillingRetryAttempt[];
+  }> {
+    const dueRetries = await this.repository.list({
       status: "retrying",
       dueBefore: now,
     });
@@ -183,6 +186,7 @@ export class RetryService {
       status: ["failed", "retrying"],
     });
 
+    const markedUncollectible: BillingRetryAttempt[] = [];
     for (const attempt of candidates) {
       if (
         attempt.graceEndsAt &&
@@ -190,11 +194,16 @@ export class RetryService {
         attempt.status !== "uncollectible" &&
         attempt.status !== "recovered"
       ) {
-        await this.markUncollectible(attempt.referenceId, attempt.kind, now);
+        const marked = await this.markUncollectible(
+          attempt.referenceId,
+          attempt.kind,
+          now,
+        );
+        markedUncollectible.push(marked);
       }
     }
 
-    return due;
+    return { dueRetries, markedUncollectible };
   }
 
   async getAttempt(id: string): Promise<BillingRetryAttempt> {

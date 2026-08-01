@@ -1087,8 +1087,25 @@ export class BillingKit {
     return attempt;
   }
 
-  processDueRetries(now?: Date): Promise<BillingRetryAttempt[]> {
-    return this.retryService.processDueRetries(now);
+  async processDueRetries(now?: Date): Promise<BillingRetryAttempt[]> {
+    const result = await this.runRecoveryCycle(now);
+    return result.dueRetries;
+  }
+
+  /**
+   * Dunning tick: return retries that are due, and finalize grace-period
+   * expirations as uncollectible (syncing invoice status + entitlements).
+   */
+  async runRecoveryCycle(now?: Date): Promise<{
+    dueRetries: BillingRetryAttempt[];
+    markedUncollectible: BillingRetryAttempt[];
+  }> {
+    const result = await this.retryService.processDueRetries(now ?? new Date());
+    for (const attempt of result.markedUncollectible) {
+      await this.withInvoiceSync(Promise.resolve(attempt));
+      await this.revokeForBillingAttempt(attempt);
+    }
+    return result;
   }
 
   getRetryAttempt(id: string): Promise<BillingRetryAttempt> {

@@ -26,6 +26,7 @@ Framework integration examples: [Express](./examples/express/), [Next.js](./exam
 - **Billing portal** — Stripe Customer Portal sessions and payment-method update flows
 - **Pluggable storage** — inject your own invoice / transaction / webhook repositories
 - **Idempotency** — safe retries for payments, refunds, and Route transfers
+- **Dunning / recovery** — failed payment & invoice retries, grace period, uncollectible
 - **Observability** — structured logger, success/failure hooks, audit correlation fields
 - **Diagnostics** — `healthCheck`, `verifyProviderConfig`, and `runDiagnostics` (no secret leakage)
 - **Error normalization** — `BillingAuthError`, `BillingValidationError`, `BillingRetryableError`
@@ -683,6 +684,98 @@ With entitlements enabled, `dispute.lost` revokes access and `dispute.won` resto
 
 ---
 
+## Dunning & payment recovery
+
+Failed payments and invoices move through: **`pending` → `failed` / `retrying` → `recovered`** or **`uncollectible`**.
+
+```typescript
+import { BillingKit } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  retry: {
+    maxRetries: 3,
+    // delays after failure #1, #2, #3
+    retryIntervalsMs: [
+      86_400_000, // 1 day
+      259_200_000, // 3 days
+      432_000_000, // 5 days
+    ],
+    gracePeriodMs: 604_800_000, // 7 days after final failure
+  },
+  retryHooks: {
+    onPaymentFailed: async ({ attempt }) => {
+      console.log("failed", attempt.referenceId, attempt.lastFailureReason);
+    },
+    onRetryScheduled: async ({ attempt }) => {
+      // schedule charge job for attempt.nextRetryAt
+    },
+    onPaymentRecovered: async ({ attempt }) => {
+      // restore access, send receipt
+    },
+    onMarkedUncollectible: async ({ attempt }) => {
+      // cancel subscription / write off
+    },
+    onRecoveryEmail: async ({ attempt }) => {
+      // send dunning email
+    },
+    onRecoveryWebhook: async ({ attempt }) => {
+      // notify your backend
+    },
+  },
+});
+
+await billing.openBillingAttempt({
+  kind: "payment", // or "invoice"
+  referenceId: "pi_xxx",
+  customerId: "cus_xxx",
+  amount: 4900,
+  currency: "usd",
+});
+
+// On decline / payment.failed webhook
+const attempt = await billing.reportBillingFailure({
+  kind: "payment",
+  referenceId: "pi_xxx",
+  reason: "card_declined",
+});
+// attempt.status === "retrying" while under maxRetries
+
+// Cron: pull due retries and re-charge
+const { dueRetries, markedUncollectible } =
+  await billing.runRecoveryCycle();
+
+for (const due of dueRetries) {
+  try {
+    await billing.createPayment({
+      amount: due.amount!,
+      currency: due.currency,
+      customerId: due.customerId,
+      metadata: { recoveryFor: due.referenceId },
+    });
+    await billing.reportBillingRecovered({
+      referenceId: due.referenceId,
+      kind: due.kind,
+    });
+  } catch {
+    await billing.reportBillingFailure({
+      kind: due.kind,
+      referenceId: due.referenceId,
+      reason: "retry_failed",
+    });
+  }
+}
+
+await billing.markBillingUncollectible("pi_xxx", "payment");
+```
+
+Invoice `status` stays in sync (`pending` / `retrying` / `failed` / `recovered` / `uncollectible`) when `kind: "invoice"`.
+
+`processDueRetries()` returns the due list; prefer `runRecoveryCycle()` when you also need grace-period write-offs.
+
+---
+
 ## Subscription example
 
 ```typescript
@@ -930,6 +1023,20 @@ assertSmallestUnitAmount(4900, { currency: "usd" }); // ok
 | Method | Description |
 |--------|-------------|
 | `refundPayment(input)` | Full or partial refund |
+
+### Dunning / recovery
+
+| Method | Description |
+|--------|-------------|
+| `openBillingAttempt(input)` | Start tracking a payment or invoice |
+| `reportBillingFailure(input)` | Record failure → schedule retry or grace |
+| `reportBillingRecovered(input)` | Mark recovered |
+| `markBillingUncollectible(id, kind?)` | Write off |
+| `processDueRetries(now?)` | List retries due now |
+| `runRecoveryCycle(now?)` | Due retries + grace → uncollectible |
+| `getRetryAttempt` / `listRetryAttempts` | Inspect attempts |
+
+Statuses: `pending`, `failed`, `retrying`, `recovered`, `uncollectible`. Configure via `retry` + `retryHooks`.
 
 ### Disputes
 
