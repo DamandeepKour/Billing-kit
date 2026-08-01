@@ -1,6 +1,9 @@
 import { BillingKit } from "../src/core/BillingKit";
 import { CouponService } from "../src/coupon";
 import { CouponError } from "../src/utils/errors";
+import { createMockGateway } from "./helpers";
+import { PaymentService } from "../src/payment";
+import { SubscriptionService } from "../src/subscription";
 
 describe("CouponService", () => {
   const service = new CouponService();
@@ -35,6 +38,21 @@ describe("CouponService", () => {
     expect(result.discountAmount).toBe(500);
     expect(result.finalAmount).toBe(9500);
     expect(result.amountOff).toBe(500);
+  });
+
+  it("caps percentage discounts with maxDiscount", () => {
+    const result = service.applyCoupon({
+      amount: 100000,
+      coupon: {
+        code: "CAP",
+        type: "percentage",
+        percentOff: 50,
+        maxDiscount: 1000,
+      },
+    });
+
+    expect(result.discountAmount).toBe(1000);
+    expect(result.finalAmount).toBe(99000);
   });
 
   it("keeps backward-compatible value field", () => {
@@ -89,7 +107,34 @@ describe("CouponService", () => {
     ).toThrow(CouponError);
   });
 
-  it("applies and removes promotion codes", () => {
+  it("rejects inactive coupons and currency mismatches", () => {
+    expect(() =>
+      service.applyCoupon({
+        amount: 5000,
+        coupon: {
+          code: "OFF",
+          type: "flat",
+          amountOff: 100,
+          active: false,
+        },
+      }),
+    ).toThrow(/inactive/);
+
+    expect(() =>
+      service.applyCoupon({
+        amount: 5000,
+        currency: "usd",
+        coupon: {
+          code: "INRONLY",
+          type: "flat",
+          amountOff: 100,
+          currency: "inr",
+        },
+      }),
+    ).toThrow(/currency/);
+  });
+
+  it("applies, removes, and deactivates promotion codes", () => {
     service.registerCoupon({
       code: "SUMMER",
       type: "percentage",
@@ -112,10 +157,19 @@ describe("CouponService", () => {
     expect(applied.appliedPromotion.code).toBe("SUMMER20");
     expect(applied.discountLine.description).toContain("SUMMER20");
 
-    const removed = service.removePromotionCode({ amount: 10000, currency: "usd" });
+    const removed = service.removePromotionCode({
+      amount: 10000,
+      currency: "usd",
+      code: "SUMMER20",
+    });
     expect(removed.discountAmount).toBe(0);
     expect(removed.finalAmount).toBe(10000);
     expect(removed.appliedPromotion).toBeUndefined();
+    expect(service.getPromotionCode("SUMMER20")?.active).toBe(false);
+
+    expect(() =>
+      service.applyPromotionCode({ amount: 10000, code: "SUMMER20" }),
+    ).toThrow(/inactive/);
   });
 });
 
@@ -154,6 +208,21 @@ describe("Invoice and payment discount flows", () => {
     expect(percentInvoice.total).toBe(8500);
     expect(percentInvoice.discountLines[0]?.promotionCode).toBe("LAUNCH15");
     expect(percentInvoice.discountLines[0]?.percentOff).toBe(15);
+
+    // PDF includes discount lines (stream is compressed; assert generation succeeds)
+    const pdf = await billing.generateInvoicePdf({ invoice: percentInvoice });
+    expect(Buffer.isBuffer(pdf)).toBe(true);
+    expect(pdf.length).toBeGreaterThan(200);
+    expect(
+      percentInvoice.discountLines.map(
+        (line) =>
+          `${line.description}: -${line.amount}`,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/LAUNCH15|PCT15/),
+      ]),
+    );
 
     const flatInvoice = await billing.generateInvoice({
       customer: { name: "Ada" },
@@ -204,7 +273,87 @@ describe("Invoice and payment discount flows", () => {
     expect(checkout.finalAmount).toBe(4900);
     expect(checkout.discountLines).toHaveLength(1);
 
-    const cleared = billing.removePromotionCode({ amount: 5000, currency: "usd" });
+    const cleared = billing.removePromotionCode({
+      amount: 5000,
+      currency: "usd",
+      code: "PAY100",
+    });
     expect(cleared.finalAmount).toBe(5000);
+  });
+
+  it("applies promotion codes when creating payments", async () => {
+    const coupons = new CouponService();
+    coupons.registerCoupon({
+      code: "PAY20",
+      type: "percentage",
+      percentOff: 20,
+    });
+    coupons.createPromotionCode({ code: "CHECKOUT20", coupon: "PAY20" });
+
+    const gateway = createMockGateway({
+      createPayment: jest.fn().mockResolvedValue({
+        id: "pay_disc",
+        status: "pending",
+        amount: 8000,
+        currency: "usd",
+        provider: "mock",
+      }),
+    });
+    const payments = new PaymentService(gateway, "usd", coupons);
+
+    const result = await payments.createPayment({
+      amount: 10000,
+      currency: "usd",
+      promotionCode: "CHECKOUT20",
+    });
+
+    expect(gateway.createPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 8000, currency: "usd" }),
+    );
+    expect(result.discountAmount).toBe(2000);
+    expect(result.originalAmount).toBe(10000);
+    expect(result.appliedPromotionCode).toBe("CHECKOUT20");
+  });
+
+  it("applies coupons on subscription create when planAmount is provided", async () => {
+    const coupons = new CouponService();
+    coupons.registerCoupon({
+      code: "SUB10",
+      type: "flat",
+      amountOff: 1000,
+    });
+    coupons.createPromotionCode({ code: "WELCOME10", coupon: "SUB10" });
+
+    const gateway = createMockGateway({
+      createSubscription: jest.fn().mockResolvedValue({
+        id: "sub_1",
+        customerId: "cus_1",
+        planId: "plan_1",
+        status: "active",
+        currentPeriodEnd: new Date(),
+        cancelAtPeriodEnd: false,
+        provider: "mock",
+      }),
+    });
+    const subscriptions = new SubscriptionService(gateway, coupons);
+
+    const sub = await subscriptions.createSubscription({
+      customerId: "cus_1",
+      planId: "plan_1",
+      planAmount: 9900,
+      promotionCode: "WELCOME10",
+    });
+
+    expect(sub.discountAmount).toBe(1000);
+    expect(sub.appliedPromotionCode).toBe("WELCOME10");
+    expect(sub.appliedCouponCode).toBe("SUB10");
+    expect(gateway.createSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          promotionCode: "WELCOME10",
+          couponCode: "SUB10",
+        }),
+      }),
+    );
   });
 });

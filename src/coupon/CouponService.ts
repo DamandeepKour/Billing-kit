@@ -281,7 +281,13 @@ export class CouponService {
   removePromotionCode(input: {
     amount: number;
     currency?: string;
+    /** When set, deactivates this promotion code so it cannot be reapplied. */
+    code?: string;
   }): CheckoutDiscountResult {
+    if (input.code) {
+      this.deactivatePromotionCode(input.code);
+    }
+
     return {
       originalAmount: input.amount,
       discountAmount: 0,
@@ -290,6 +296,27 @@ export class CouponService {
       discountLines: [],
       appliedPromotion: undefined,
     };
+  }
+
+  /** Soft-disable a promotion code (keeps history / redemption counts). */
+  deactivatePromotionCode(idOrCode: string): PromotionCode {
+    const promotion = this.getPromotionCode(idOrCode);
+    if (!promotion) {
+      throw new CouponError(`Promotion code "${idOrCode}" not found`);
+    }
+    const updated: PromotionCode = { ...promotion, active: false };
+    this.promotionCodes.set(updated.id, updated);
+    this.promotionCodes.set(updated.code, updated);
+    return updated;
+  }
+
+  /** Soft-disable a coupon. */
+  deactivateCoupon(idOrCode: string): Coupon {
+    const coupon = this.getCoupon(idOrCode);
+    if (!coupon) {
+      throw new CouponError(`Coupon "${idOrCode}" not found`);
+    }
+    return this.registerCoupon({ ...coupon, active: false });
   }
 
   applyCheckoutDiscount(input: CheckoutDiscountInput): CheckoutDiscountResult {

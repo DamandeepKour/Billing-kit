@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Coupons & promotion codes docs + deactivate helpers; expanded discount tests (invoice/PDF, payment, subscription, validation)
 - Failed payment recovery / dunning: `runRecoveryCycle()`, invoice sync on grace expiry, README dunning guide (retry hooks, max retries, grace period)
 - Tax engine enhancements: region detection, sales-tax facade, invoice tax summaries, line-item tax rollups, customer tax ID on breakdowns, `BillingValidationError` for invalid amounts/rates
 - Multi-currency hardening: `assertSmallestUnitAmount`, `assertLineItemCurrencies`, `convertAmount`, `getMinorUnitFactor`, `listSupportedCurrencies`; invoice/payment smallest-unit validation; customer profile currency checks

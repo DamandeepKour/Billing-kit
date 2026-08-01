@@ -946,8 +946,17 @@ export class BillingKit {
   removePromotionCode(input: {
     amount: number;
     currency?: string;
+    code?: string;
   }): CheckoutDiscountResult {
     return this.couponService.removePromotionCode(input);
+  }
+
+  deactivatePromotionCode(idOrCode: string): PromotionCode {
+    return this.couponService.deactivatePromotionCode(idOrCode);
+  }
+
+  deactivateCoupon(idOrCode: string): Coupon {
+    return this.couponService.deactivateCoupon(idOrCode);
   }
 
   applyCheckoutDiscount(input: CheckoutDiscountInput): CheckoutDiscountResult {

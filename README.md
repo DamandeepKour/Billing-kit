@@ -18,6 +18,7 @@ Framework integration examples: [Express](./examples/express/), [Next.js](./exam
 - **Invoices** — line items, discounts, tax, numbering, PDF export
 - **Payments** — create, capture, cancel, status (Stripe PaymentIntents / Razorpay Orders)
 - **Refunds** — full and partial, with optional idempotency keys
+- **Coupons / promos** — fixed & percentage discounts, promotion codes, invoice discount lines
 - **Disputes** — fetch/list, Razorpay accept/contest, Stripe evidence, normalized webhook events
 - **Subscriptions** — plans, create, pause / resume, cancel, schedule cancellation, renew
 - **Tax** — GST (CGST/SGST/IGST), VAT, sales tax, `autoTax`, place of supply
@@ -642,6 +643,91 @@ Reusing the same `idempotencyKey` with the same payload returns the stored resul
 
 ---
 
+## Coupons & promotion codes
+
+Register coupons (fixed or percentage), attach customer-facing promotion codes, and apply them on invoices, payments, and subscriptions. Discount lines appear on invoices and PDFs.
+
+```typescript
+import { BillingKit } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  currency: "usd",
+});
+
+// Fixed (amountOff) and percentage (percentOff) coupons — amounts in smallest units
+billing.registerCoupon({
+  code: "SAVE20",
+  type: "percentage",
+  percentOff: 20,
+  duration: "once",
+  maxRedemptions: 100,
+  minAmount: 1000, // require ≥ $10.00
+  expiresAt: new Date("2027-01-01"),
+});
+
+billing.registerCoupon({
+  code: "FLAT500",
+  type: "flat",
+  amountOff: 500, // $5.00
+  currency: "usd",
+  duration: "forever",
+});
+
+const promo = billing.createPromotionCode({
+  code: "LAUNCH20",
+  coupon: "SAVE20",
+  maxRedemptions: 50,
+});
+
+// Preview / cart helpers
+const preview = billing.applyPromotionCode({
+  amount: 4900,
+  code: promo.code,
+  currency: "usd",
+});
+// preview.finalAmount, preview.discountLine
+
+billing.removePromotionCode({ amount: 4900, currency: "usd", code: "LAUNCH20" });
+// clears discount math and deactivates the code
+
+// Invoice — discountLines shown on PDF
+const invoice = await billing.generateInvoice({
+  customer: { name: "Ada" },
+  billingAddress: {
+    line1: "1 Market St",
+    city: "San Francisco",
+    state: "CA",
+    postalCode: "94105",
+    country: "US",
+  },
+  lineItems: [{ description: "Pro", quantity: 1, unitAmount: 4900 }],
+  promotionCode: "LAUNCH20", // or coupon: { ... }
+  taxType: "none",
+});
+console.log(invoice.discountLines, invoice.discountTotal, invoice.total);
+
+// Payment — charges the discounted amount
+await billing.createPayment({
+  amount: 4900,
+  currency: "usd",
+  promotionCode: "LAUNCH20",
+});
+
+// Subscription — pass planAmount to compute discountAmount metadata
+await billing.createSubscription({
+  customerId: "cus_xxx",
+  planId: "plan_xxx",
+  planAmount: 2900,
+  promotionCode: "LAUNCH20",
+});
+```
+
+Validation covers **expiry**, **usage limits** (`maxRedemptions`), **minimum amount**, inactive codes, and currency mismatches (`CouponError`).
+
+---
+
 ## Dispute example
 
 Chargebacks / disputes are provider-initiated. billing-kit normalizes webhook events and exposes fetch + response APIs.
@@ -953,6 +1039,7 @@ try {
 | `StripeInvalidRequestError` | `STRIPE_INVALID_REQUEST` | Invalid Stripe params |
 | `IdempotencyConflictError` | `IDEMPOTENCY_CONFLICT` | Key reused with different payload |
 | `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` | Bad signature / raw body / secret rotation — see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
+| `CouponError` | `COUPON_ERROR` | Expired / limit / min amount / inactive promo |
 | `InvoiceNotFoundError` | `INVOICE_NOT_FOUND` | Unknown invoice id |
 | `UnsupportedOperationError` | `UNSUPPORTED_OPERATION` | Provider does not support the call |
 
@@ -1023,6 +1110,19 @@ assertSmallestUnitAmount(4900, { currency: "usd" }); // ok
 | Method | Description |
 |--------|-------------|
 | `refundPayment(input)` | Full or partial refund |
+
+### Coupons / promotions
+
+| Method | Description |
+|--------|-------------|
+| `registerCoupon(coupon)` | Register fixed or % coupon |
+| `createPromotionCode(input)` | Attach a customer-facing code |
+| `applyCoupon` / `applyPromotionCode` | Compute discount |
+| `removePromotionCode` / `deactivatePromotionCode` | Clear / disable promo |
+| `applyCheckoutDiscount` | Cart helper (promo or coupon) |
+| `getCoupon` / `getPromotionCode` | Lookup |
+
+Use `promotionCode` or `coupon` on `generateInvoice`, `createPayment`, and `createSubscription`.
 
 ### Dunning / recovery
 
