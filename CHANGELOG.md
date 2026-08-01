@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Razorpay Route split payouts docs (vendor routing example, API table); transaction fields `routedAmount` / `platformFee`
 - Customer billing profiles docs + payment/update reuse tests (`createCustomerProfile`, saved payment methods, invoice/payment defaults)
 - Coupons & promotion codes docs + deactivate helpers; expanded discount tests (invoice/PDF, payment, subscription, validation)
 - Failed payment recovery / dunning: `runRecoveryCycle()`, invoice sync on grace expiry, README dunning guide (retry hooks, max retries, grace period)

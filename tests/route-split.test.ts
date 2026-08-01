@@ -2,7 +2,7 @@ import { BillingKit } from "../src/core/BillingKit";
 import { calculateSplitAllocations, SplitValidationError } from "../src/utils/split";
 import { UnsupportedOperationError } from "../src/utils/stripe-errors";
 import { TransactionType } from "../src/types/transaction";
-import { IdempotencyConflictError, IdempotencyInFlightError,} from "../src/utils/errors";
+import { IdempotencyConflictError, IdempotencyInFlightError } from "../src/utils/errors";
 
 const paymentsTransfer = jest.fn();
 const transfersCreate = jest.fn();

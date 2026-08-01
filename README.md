@@ -18,6 +18,7 @@ Framework integration examples: [Express](./examples/express/), [Next.js](./exam
 - **Invoices** — line items, discounts, tax, numbering, PDF export
 - **Payments** — create, capture, cancel, status (Stripe PaymentIntents / Razorpay Orders)
 - **Customer profiles** — reusable billing address, tax IDs, currency, notes, saved payment methods
+- **Split payouts** — Razorpay Route platform/vendor splits, transfers, reversals, settlement details
 - **Refunds** — full and partial, with optional idempotency keys
 - **Coupons / promos** — fixed & percentage discounts, promotion codes, invoice discount lines
 - **Disputes** — fetch/list, Razorpay accept/contest, Stripe evidence, normalized webhook events
@@ -810,6 +811,83 @@ Validation covers **expiry**, **usage limits** (`maxRedemptions`), **minimum amo
 
 ---
 
+## Vendor payout routing (Razorpay Route)
+
+Split a captured payment between the platform and one or more linked vendor accounts. Transfer rules support fixed amounts or percentages; optional platform commission is withheld before routing. Settlement can be held (`onHold`) and reversed later.
+
+Requires `provider: "razorpay"` with Route-enabled linked accounts. Amounts are in the smallest currency unit (paise).
+
+```typescript
+import { BillingKit, calculateSplitAllocations } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  currency: "inr",
+});
+
+// Preview allocations without calling the API
+const preview = billing.calculateSplit({
+  paymentId: "pay_xxx",
+  amount: 10000, // ₹100.00
+  platformCommission: { type: "percent", percent: 10 }, // ₹10 platform fee
+  transfers: [
+    { linkedAccountId: "acc_vendor_a", percent: 60 },
+    { linkedAccountId: "acc_vendor_b", percent: 40, onHold: true },
+  ],
+});
+// preview.platformFee → 1000, routedAmount → 9000, allocations → …
+
+// Same math available as a pure helper
+calculateSplitAllocations({
+  paymentId: "pay_xxx",
+  amount: 10000,
+  platformCommission: { type: "flat", amount: 500 },
+  transfers: [{ linkedAccountId: "acc_vendor", percent: 100 }],
+});
+
+// Route the payment (records routedAmount + platformFee on the transaction ledger)
+const split = await billing.splitPayment({
+  paymentId: "pay_xxx",
+  amount: 10000,
+  currency: "inr",
+  platformCommission: { type: "percent", percent: 10 },
+  transfers: [
+    { linkedAccountId: "acc_vendor_a", percent: 60 },
+    { linkedAccountId: "acc_vendor_b", percent: 40, onHold: true },
+  ],
+  idempotencyKey: "split_ord_55", // safe retries
+});
+console.log(split.platformFee, split.routedAmount, split.transfers);
+
+// Direct transfer to a linked account (with or without a source payment)
+const transfer = await billing.createTransfer({
+  linkedAccountId: "acc_vendor_a",
+  amount: 2500,
+  currency: "inr",
+  paymentId: "pay_xxx", // omit for a direct transfer
+  idempotencyKey: "trf_ord_55",
+});
+
+// Reverse (full or partial)
+await billing.reverseTransfer({
+  transferId: transfer.id,
+  amount: 1000,
+  idempotencyKey: "rev_ord_55",
+});
+
+// Settlement / transfer status
+const details = await billing.getSettlementDetails({
+  transferId: transfer.id, // or settlementId: "setl_xxx"
+});
+console.log(details.status, details.utr, details.fees);
+```
+
+Over-allocation, empty transfer rules, and invalid commissions throw `SplitValidationError`. Stripe (and other non-Route gateways) throw `UnsupportedOperationError`.
+
+---
+
 ## Dispute example
 
 Chargebacks / disputes are provider-initiated. billing-kit normalizes webhook events and exposes fetch + response APIs.
@@ -1123,6 +1201,7 @@ try {
 | `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` | Bad signature / raw body / secret rotation — see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | `CouponError` | `COUPON_ERROR` | Expired / limit / min amount / inactive promo |
 | `CustomerProfileNotFoundError` | `CUSTOMER_PROFILE_NOT_FOUND` | Unknown `customerProfileId` |
+| `SplitValidationError` | `SPLIT_VALIDATION_ERROR` | Invalid platform/vendor payout split |
 | `InvoiceNotFoundError` | `INVOICE_NOT_FOUND` | Unknown invoice id |
 | `UnsupportedOperationError` | `UNSUPPORTED_OPERATION` | Provider does not support the call |
 
@@ -1193,6 +1272,19 @@ assertSmallestUnitAmount(4900, { currency: "usd" }); // ok
 | Method | Description |
 |--------|-------------|
 | `refundPayment(input)` | Full or partial refund |
+
+### Razorpay Route / split payouts
+
+| Method | Description |
+|--------|-------------|
+| `calculateSplit(input)` | Preview platform fee + vendor allocations |
+| `splitPayment(input)` | Route a payment to linked accounts |
+| `createTransfer(input)` | Direct or payment-sourced transfer |
+| `reverseTransfer(input)` | Full / partial transfer reversal |
+| `getSettlementDetails(input)` | Settlement or transfer status |
+| `getTransferRequest` / `listTransferRequests` / `reconcileTransferRequest` | Idempotency + reconciliation |
+
+Also: `calculateSplitAllocations` (pure helper). Transaction records store `routedAmount`, `platformFee`, and `vendorAmount`.
 
 ### Customer billing profiles
 
