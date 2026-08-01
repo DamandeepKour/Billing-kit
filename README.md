@@ -17,6 +17,7 @@ Framework integration examples: [Express](./examples/express/), [Next.js](./exam
 ## Features
 - **Invoices** — line items, discounts, tax, numbering, PDF export
 - **Payments** — create, capture, cancel, status (Stripe PaymentIntents / Razorpay Orders)
+- **Customer profiles** — reusable billing address, tax IDs, currency, notes, saved payment methods
 - **Refunds** — full and partial, with optional idempotency keys
 - **Coupons / promos** — fixed & percentage discounts, promotion codes, invoice discount lines
 - **Disputes** — fetch/list, Razorpay accept/contest, Stripe evidence, normalized webhook events
@@ -643,6 +644,87 @@ Reusing the same `idempotencyKey` with the same payload returns the stored resul
 
 ---
 
+## Customer billing profiles
+
+Store reusable customer billing data once, then pass `customerProfileId` on invoices and payments. Profiles hold billing address, tax IDs, default currency, email, notes, and saved payment methods.
+
+```typescript
+import { BillingKit } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  currency: "usd",
+  tax: { enabled: true, taxType: "gst", sellerState: "KA", defaultRate: 18 },
+});
+
+const profile = await billing.createCustomerProfile({
+  name: "Ada Lovelace",
+  email: "ada@acme.com",
+  companyName: "Analytical Engines Pvt Ltd",
+  gstin: "29AAAAA0000A1Z5",
+  customerTaxId: "29AAAAA0000A1Z5",
+  isBusinessCustomer: true,
+  defaultCurrency: "inr",
+  billingNotes: "Net 30 · PO required",
+  billingAddress: {
+    line1: "14 MG Road",
+    city: "Bengaluru",
+    state: "KA",
+    postalCode: "560001",
+    country: "IN",
+  },
+  paymentPreferences: {
+    allowAutoCharge: true,
+    invoiceDelivery: "email",
+  },
+});
+
+// Save cards / UPI / etc. and pick a default
+await billing.attachPaymentMethod({
+  profileId: profile.id,
+  paymentMethodId: "pm_card_visa",
+  type: "card",
+  brand: "visa",
+  last4: "4242",
+  setAsDefault: true,
+});
+
+await billing.setDefaultPaymentMethod({
+  profileId: profile.id,
+  paymentMethodId: "pm_card_visa",
+});
+
+// Updates merge into the stored profile
+await billing.updateCustomerProfile({
+  profileId: profile.id,
+  billingNotes: "Net 45",
+  defaultCurrency: "usd",
+});
+
+// Invoice + payment reuse address, tax IDs, currency, and notes
+const invoice = await billing.generateInvoice({
+  customerProfileId: profile.id,
+  lineItems: [{ description: "Pro seat", quantity: 1, unitAmount: 10000 }],
+  taxType: "gst",
+  sellerState: "KA",
+});
+// invoice.customer.gstin, invoice.billingAddress, invoice.currency, invoice.notes
+
+const payment = await billing.createPayment({
+  amount: invoice.total,
+  customerProfileId: profile.id,
+});
+// payment.currency from profile; metadata.defaultPaymentMethodId when set
+
+const loaded = await billing.getCustomerProfile(profile.id);
+const all = await billing.listCustomerProfiles();
+```
+
+Pass `syncProvider: true` on create/attach/set-default to also sync a Stripe Customer and payment methods when using the Stripe gateway.
+
+---
+
 ## Coupons & promotion codes
 
 Register coupons (fixed or percentage), attach customer-facing promotion codes, and apply them on invoices, payments, and subscriptions. Discount lines appear on invoices and PDFs.
@@ -1040,6 +1122,7 @@ try {
 | `IdempotencyConflictError` | `IDEMPOTENCY_CONFLICT` | Key reused with different payload |
 | `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` | Bad signature / raw body / secret rotation — see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | `CouponError` | `COUPON_ERROR` | Expired / limit / min amount / inactive promo |
+| `CustomerProfileNotFoundError` | `CUSTOMER_PROFILE_NOT_FOUND` | Unknown `customerProfileId` |
 | `InvoiceNotFoundError` | `INVOICE_NOT_FOUND` | Unknown invoice id |
 | `UnsupportedOperationError` | `UNSUPPORTED_OPERATION` | Provider does not support the call |
 
@@ -1110,6 +1193,18 @@ assertSmallestUnitAmount(4900, { currency: "usd" }); // ok
 | Method | Description |
 |--------|-------------|
 | `refundPayment(input)` | Full or partial refund |
+
+### Customer billing profiles
+
+| Method | Description |
+|--------|-------------|
+| `createCustomerProfile(input)` | Create reusable billing profile |
+| `updateCustomerProfile(input)` | Update address, tax IDs, currency, notes, prefs |
+| `getCustomerProfile(id)` / `listCustomerProfiles()` | Lookup |
+| `attachPaymentMethod({ profileId, ... })` | Save a payment method on the profile |
+| `setDefaultPaymentMethod({ profileId, ... })` | Set default PM for the profile |
+
+Use `customerProfileId` on `generateInvoice` / `createPayment` to apply stored defaults (customer, address, tax IDs, currency, notes, default PM metadata).
 
 ### Coupons / promotions
 

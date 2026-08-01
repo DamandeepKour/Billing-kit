@@ -1,5 +1,8 @@
 import { BillingKit } from "../src/core/BillingKit";
-import { CustomerProfileNotFoundError } from "../src/customer";
+import { CustomerProfileNotFoundError, CustomerProfileService } from "../src/customer";
+import { PaymentService } from "../src/payment";
+import { InMemoryCustomerProfileRepository } from "../src/repositories";
+import { createMockGateway } from "./helpers";
 
 const address = {
   line1: "14 MG Road",
@@ -138,6 +141,94 @@ describe("Customer billing profiles", () => {
     expect(second.currency).toBe("inr");
     expect(second.billingAddress.city).toBe("Bengaluru");
     expect(second.total).toBeGreaterThan(0);
+  });
+
+  it("applies profile updates on later invoices and payments", async () => {
+    const repo = new InMemoryCustomerProfileRepository();
+    const billing = new BillingKit({
+      provider: "stripe",
+      secretKey: "sk_test",
+      currency: "usd",
+      customerProfileRepository: repo,
+    });
+
+    const profile = await billing.createCustomerProfile({
+      name: "Contact",
+      email: "old@acme.com",
+      companyName: "Acme",
+      customerTaxId: "TAX-OLD",
+      billingAddress: address,
+      defaultCurrency: "inr",
+      billingNotes: "Net 15",
+    });
+
+    await billing.attachPaymentMethod({
+      profileId: profile.id,
+      paymentMethodId: "pm_visa",
+      type: "card",
+      last4: "4242",
+      setAsDefault: true,
+    });
+
+    await billing.updateCustomerProfile({
+      profileId: profile.id,
+      email: "ap@acme.com",
+      customerTaxId: "TAX-NEW",
+      defaultCurrency: "usd",
+      billingNotes: "Net 45",
+      billingAddress: {
+        ...address,
+        line1: "88 Residency Road",
+        city: "Mysuru",
+        postalCode: "570001",
+      },
+    });
+
+    const invoice = await billing.generateInvoice({
+      customerProfileId: profile.id,
+      lineItems: [{ description: "Renewal", quantity: 1, unitAmount: 5000 }],
+      taxType: "none",
+    });
+
+    expect(invoice.customer.email).toBe("ap@acme.com");
+    expect(invoice.customer.customerTaxId).toBe("TAX-NEW");
+    expect(invoice.currency).toBe("usd");
+    expect(invoice.notes).toBe("Net 45");
+    expect(invoice.billingAddress.city).toBe("Mysuru");
+    expect(invoice.billingAddress.line1).toBe("88 Residency Road");
+
+    const createPayment = jest.fn().mockImplementation(async (input) => ({
+      id: "pay_profile",
+      status: "captured",
+      amount: input.amount,
+      currency: input.currency,
+      provider: "mock",
+      metadata: input.metadata,
+    }));
+    const payments = new PaymentService(
+      createMockGateway({ createPayment }),
+      "inr",
+      undefined,
+      new CustomerProfileService(repo),
+    );
+
+    const payment = await payments.createPayment({
+      amount: 5000,
+      customerProfileId: profile.id,
+    });
+
+    expect(payment.currency).toBe("usd");
+    expect(payment.metadata?.customerProfileId).toBe(profile.id);
+    expect(payment.metadata?.defaultPaymentMethodId).toBe("pm_visa");
+    expect(createPayment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currency: "usd",
+        metadata: expect.objectContaining({
+          customerProfileId: profile.id,
+          defaultPaymentMethodId: "pm_visa",
+        }),
+      }),
+    );
   });
 
   it("throws when profile is missing", async () => {
