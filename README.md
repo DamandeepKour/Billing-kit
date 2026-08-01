@@ -19,6 +19,7 @@ Framework integration examples: [Express](./examples/express/), [Next.js](./exam
 - **Payments** — create, capture, cancel, status (Stripe PaymentIntents / Razorpay Orders)
 - **Customer profiles** — reusable billing address, tax IDs, currency, notes, saved payment methods
 - **Split payouts** — Razorpay Route platform/vendor splits, transfers, reversals, settlement details
+- **Audit logs** — invoice/payment timelines, masked payloads, pluggable `auditLogRepository`
 - **Refunds** — full and partial, with optional idempotency keys
 - **Coupons / promos** — fixed & percentage discounts, promotion codes, invoice discount lines
 - **Disputes** — fetch/list, Razorpay accept/contest, Stripe evidence, normalized webhook events
@@ -888,6 +889,74 @@ Over-allocation, empty transfer rules, and invalid commissions throw `SplitValid
 
 ---
 
+## Billing audit logs
+
+Append-only audit trails for invoices, payments, refunds, tax calculations, and webhooks. Each entry stores timestamp, actor, provider, resource id, and a **masked** `payloadSummary` (secrets, tokens, and card-like numbers are redacted via `maskSensitiveFields`).
+
+Invoice/payment/tax/webhook flows record events automatically; use `recordBillingEvent` for custom milestones. Inject `auditLogRepository` (defaults to in-memory) and optional `auditActor`.
+
+```typescript
+import { BillingKit, InMemoryAuditLogRepository, maskSensitiveFields } from "billing-kit";
+
+const auditLogRepository = new InMemoryAuditLogRepository();
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  auditLogRepository,
+  auditActor: { type: "api", id: "svc_billing", name: "Billing API" },
+});
+
+const invoice = await billing.generateInvoice({
+  customer: { name: "Ada", email: "ada@example.com" },
+  billingAddress: {
+    line1: "1 Main St",
+    city: "Mumbai",
+    state: "MH",
+    postalCode: "400001",
+    country: "IN",
+  },
+  lineItems: [{ description: "Pro", quantity: 1, unitAmount: 4900 }],
+  taxType: "none",
+});
+await billing.updateInvoiceStatus(invoice.id, "paid");
+
+// Chronological invoice timeline (created → status → custom events)
+const timeline = await billing.getInvoiceTimeline(invoice.id);
+// timeline[i].timestamp, .actor, .provider, .resourceId, .payloadSummary
+
+await billing.recordBillingEvent({
+  action: "payment.attempted",
+  resourceType: "payment",
+  resourceId: "pay_123",
+  payload: {
+    amount: 4900,
+    secretKey: "sk_live_should_be_masked", // stored as ****…sked
+  },
+});
+await billing.recordBillingEvent({
+  action: "refund.created",
+  resourceType: "refund",
+  resourceId: "rfnd_123",
+  relatedResourceIds: ["pay_123"],
+  payload: { paymentId: "pay_123", amount: 1000 },
+});
+
+const paymentLog = await billing.getPaymentAuditLog("pay_123");
+// includes payment + related refunds/disputes, ordered by timestamp then sequence
+
+const taxEvents = await billing.listAuditEvents({
+  resourceType: "tax",
+  action: "tax.calculated",
+});
+const webhooks = await billing.listAuditEvents({ resourceType: "webhook" });
+
+// Standalone masking helper (also used when summarizing payloads)
+maskSensitiveFields({ authorization: "Bearer secret", amount: 100 });
+```
+
+---
+
 ## Dispute example
 
 Chargebacks / disputes are provider-initiated. billing-kit normalizes webhook events and exposes fetch + response APIs.
@@ -1400,10 +1469,13 @@ Results include `status`, `checks`, `errors`, `warnings`, and `recommendations`.
 | Method | Description |
 |--------|-------------|
 | `recordTransaction` / `getTransaction` | Ledger events |
-| `recordBillingEvent` | Append audit entry |
-| `getInvoiceTimeline` / `getPaymentAuditLog` | Audit timelines |
-| `listAuditEvents` | Filter audit log |
+| `recordBillingEvent` | Append audit entry (payloads are masked) |
+| `getInvoiceTimeline(id)` | Chronological invoice audit trail |
+| `getPaymentAuditLog(id)` | Payment + related refund/dispute events |
+| `listAuditEvents(filter)` / `getAuditEvent(id)` | Query / fetch audit entries |
 | `getIdempotencyRequest` / `listIdempotencyRequests` | Idempotency store |
+
+Config: `auditLogRepository`, `auditActor`. Helper: `maskSensitiveFields` / `summarizePayload`.
 
 ---
 

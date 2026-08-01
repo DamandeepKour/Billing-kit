@@ -91,6 +91,43 @@ describe("AuditLogService", () => {
     ]);
     expect(log[0].payloadSummary.secretKey).not.toBe("should-not-leak");
   });
+
+  it("persists entries and orders equal timestamps by sequence", async () => {
+    const repo = new InMemoryAuditLogRepository();
+    const stamp = new Date("2026-01-15T12:00:00.000Z");
+
+    const first = await repo.save({
+      id: "aud_first",
+      timestamp: stamp,
+      sequence: 1,
+      action: "webhook.received",
+      resourceType: "webhook",
+      resourceId: "evt_a",
+      provider: "stripe",
+      actor: { type: "webhook", id: "stripe" },
+      payloadSummary: { type: "payment.captured" },
+    });
+    const second = await repo.save({
+      id: "aud_second",
+      timestamp: stamp,
+      sequence: 2,
+      action: "webhook.received",
+      resourceType: "webhook",
+      resourceId: "evt_b",
+      provider: "stripe",
+      actor: { type: "webhook", id: "stripe" },
+      payloadSummary: { type: "refund.created" },
+    });
+
+    const listed = await repo.list({ resourceType: "webhook" });
+    expect(listed.map((e) => e.id)).toEqual([first.id, second.id]);
+    expect(await repo.findById(first.id)).toMatchObject({
+      id: first.id,
+      resourceId: "evt_a",
+      provider: "stripe",
+      actor: { type: "webhook", id: "stripe" },
+    });
+  });
 });
 
 describe("BillingKit audit trail", () => {
