@@ -298,6 +298,49 @@ describe("Webhook idempotency", () => {
     expect(older.record.processedAt).toBeInstanceOf(Date);
   });
 
+  it("supports verify-and-claim then complete for fast acknowledge flows", async () => {
+    const body = JSON.stringify({
+      event: "payment.captured",
+      created_at: 1_700_000_300,
+      payload: {
+        payment: {
+          entity: {
+            id: "pay_fast_ack",
+            amount: 2500,
+            currency: "INR",
+            status: "captured",
+            created_at: 1_700_000_300,
+          },
+        },
+      },
+    });
+    const sdk = billing();
+    const request = {
+      rawBody: Buffer.from(body),
+      signature: sign(body),
+      eventId: "rzp_event_fast_ack",
+    };
+
+    const claim = await sdk.verifyAndClaimWebhook(request);
+    expect(claim.shouldHandle).toBe(true);
+    expect(claim.duplicate).toBe(false);
+    expect(claim.record.eventId).toBe("rzp_event_fast_ack");
+    expect(claim.event.normalizedType).toBe("payment.captured");
+
+    const replay = await sdk.verifyAndClaimWebhook(request);
+    expect(replay.shouldHandle).toBe(false);
+    expect(replay.duplicate).toBe(true);
+
+    const processed = await sdk.completeWebhookProcessing(claim.record, {
+      status: "processed",
+    });
+    expect(processed.status).toBe("processed");
+    expect(processed.processedAt).toBeInstanceOf(Date);
+
+    const events = await sdk.listWebhookEvents();
+    expect(events.some((e) => e.eventId === "rzp_event_fast_ack")).toBe(true);
+  });
+
   it("provisions and revokes features from subscription webhooks", async () => {
     const sdk = billing();
     await sdk.setPlanFeatures({

@@ -46,10 +46,12 @@ export type {
 export type { CreateOrderInput, OrderResult, VerifyPaymentSignatureInput } from "./order";
 export type {
   ClaimWebhookEventResult,
+  CompleteWebhookProcessingInput,
   NormalizedWebhookType,
   ProcessWebhookResult,
   RawWebhookRequest,
   RazorpayWebhookEventName,
+  VerifyAndClaimWebhookResult,
   WebhookEntity,
   WebhookEntityKind,
   WebhookEvent,

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Webhook idempotency docs + fast-ack helpers (`verifyAndClaimWebhook`, `completeWebhookProcessing`, `fastAcknowledge`); Razorpay `X-Razorpay-Event-Id` dedupe examples
 - Billing audit logs docs (timelines, masked payloads, `auditLogRepository`); ordering/persistence tests
 - Razorpay Route split payouts docs (vendor routing example, API table); transaction fields `routedAmount` / `platformFee`
 - Customer billing profiles docs + payment/update reuse tests (`createCustomerProfile`, saved payment methods, invoice/payment defaults)

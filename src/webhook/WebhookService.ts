@@ -2,8 +2,10 @@ import { createHash } from "crypto";
 import type { PaymentGateway } from "../interfaces/PaymentGateway";
 import type { WebhookEventRepository } from "../interfaces/WebhookEventRepository";
 import type {
+  CompleteWebhookProcessingInput,
   ProcessWebhookResult,
   RawWebhookRequest,
+  VerifyAndClaimWebhookResult,
   WebhookEvent,
   WebhookEventHandler,
   WebhookEventRecord,
@@ -20,10 +22,13 @@ export class WebhookService {
     return this.gateway.verifyWebhook(payload, signature);
   }
 
-  async processWebhook(
+  /**
+   * Verify the signature, resolve the dedupe event id, and claim the event.
+   * Does not run the business handler — use for fast-ack then process flows.
+   */
+  async verifyAndClaimWebhook(
     request: RawWebhookRequest,
-    handler: WebhookEventHandler,
-  ): Promise<ProcessWebhookResult> {
+  ): Promise<VerifyAndClaimWebhookResult> {
     const started = Date.now();
     const event = this.verifyWebhook(request.rawBody, request.signature);
     const eventId = resolveDedupeEventId({
@@ -43,9 +48,9 @@ export class WebhookService {
       resourceId: event.entity.id,
       occurredAt: event.occurredAt,
     });
+    const durationMs = Date.now() - started;
 
     if (claim.outcome !== "claimed") {
-      const durationMs = Date.now() - started;
       return {
         event,
         record: {
@@ -54,36 +59,73 @@ export class WebhookService {
         },
         duplicate: claim.outcome === "duplicate",
         outOfOrder: claim.outcome === "out_of_order",
+        shouldHandle: false,
         durationMs,
       };
     }
 
+    return {
+      event,
+      record: claim.record,
+      duplicate: false,
+      outOfOrder: false,
+      shouldHandle: true,
+      durationMs,
+    };
+  }
+
+  async completeWebhookProcessing(
+    record: WebhookEventRecord,
+    outcome: CompleteWebhookProcessingInput,
+  ): Promise<WebhookEventRecord> {
+    const processedAt = new Date();
+    const durationMs = processedAt.getTime() - record.receivedAt.getTime();
+    return this.repository.save({
+      ...record,
+      status: outcome.status,
+      processedAt,
+      durationMs,
+      error:
+        outcome.status === "failed"
+          ? outcome.error instanceof Error
+            ? outcome.error.message
+            : String(outcome.error)
+          : undefined,
+    });
+  }
+
+  async processWebhook(
+    request: RawWebhookRequest,
+    handler: WebhookEventHandler,
+  ): Promise<ProcessWebhookResult> {
+    const claim = await this.verifyAndClaimWebhook(request);
+
+    if (!claim.shouldHandle) {
+      return {
+        event: claim.event,
+        record: claim.record,
+        duplicate: claim.duplicate,
+        outOfOrder: claim.outOfOrder,
+        durationMs: claim.durationMs,
+      };
+    }
+
     try {
-      await handler(event);
-      const processedAt = new Date();
-      const durationMs = processedAt.getTime() - receivedAt.getTime();
-      const processed = await this.repository.save({
-        ...claim.record,
+      await handler(claim.event);
+      const processed = await this.completeWebhookProcessing(claim.record, {
         status: "processed",
-        processedAt,
-        durationMs,
       });
       return {
-        event,
+        event: claim.event,
         record: processed,
         duplicate: false,
         outOfOrder: false,
-        durationMs,
+        durationMs: processed.durationMs,
       };
     } catch (error) {
-      const processedAt = new Date();
-      const durationMs = processedAt.getTime() - receivedAt.getTime();
-      await this.repository.save({
-        ...claim.record,
+      await this.completeWebhookProcessing(claim.record, {
         status: "failed",
-        processedAt,
-        durationMs,
-        error: error instanceof Error ? error.message : String(error),
+        error,
       });
       throw error;
     }

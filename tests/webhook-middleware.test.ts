@@ -426,6 +426,76 @@ describe("webhook / http handler", () => {
     expect(second.body).toMatchObject({ ok: true, duplicate: true });
   });
 
+  it("fast-acknowledges after verify+claim then runs the handler", async () => {
+    const payload = createMockRazorpayPaymentCaptured({
+      id: "pay_fast_http",
+      created_at: CREATED_AT,
+    });
+    const signed = createSignedRazorpayWebhookRequest({
+      payload,
+      secret: RAZORPAY_SECRET,
+      asBuffer: true,
+      eventId: "rzp_fast_http",
+    });
+    const billing = razorpayBilling();
+    let handlerStarted = false;
+    let responseBeforeHandler = false;
+    const handler = jest.fn(async () => {
+      handlerStarted = true;
+      expect(responseBeforeHandler).toBe(true);
+    });
+    const httpHandler = billing.createWebhookHttpHandler(handler, {
+      fastAcknowledge: true,
+    });
+    const res = {
+      statusCode: 0,
+      body: null as unknown,
+      status(code: number) {
+        this.statusCode = code;
+        responseBeforeHandler = !handlerStarted;
+        return this;
+      },
+      json(payload: unknown) {
+        this.body = payload;
+        return this;
+      },
+    };
+
+    await httpHandler({ body: signed.rawBody, headers: signed.headers }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      ok: true,
+      acknowledged: true,
+      duplicate: false,
+      eventId: "rzp_fast_http",
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    const replay = {
+      statusCode: 0,
+      body: null as unknown,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        this.body = payload;
+        return this;
+      },
+    };
+    await httpHandler(
+      { body: signed.rawBody, headers: signed.headers },
+      replay,
+    );
+    expect(replay.body).toMatchObject({
+      ok: true,
+      duplicate: true,
+      acknowledged: true,
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 400 when signature is invalid", async () => {
     const httpHandler = stripeBilling().createWebhookHttpHandler(jest.fn());
     const res = {

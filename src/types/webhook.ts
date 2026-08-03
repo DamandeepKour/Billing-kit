@@ -79,6 +79,21 @@ export interface ProcessWebhookResult {
   outOfOrder: boolean;
   durationMs?: number;
 }
+
+/** Result of signature verification + durable event-id claim (before handler). */
+export interface VerifyAndClaimWebhookResult {
+  event: WebhookEvent;
+  record: WebhookEventRecord;
+  duplicate: boolean;
+  outOfOrder: boolean;
+  /** True when this delivery is a fresh claim and the handler should run. */
+  shouldHandle: boolean;
+  durationMs: number;
+}
+
+export type CompleteWebhookProcessingInput =
+  | { status: "processed" }
+  | { status: "failed"; error: unknown };
 export const RAZORPAY_WEBHOOK_EVENTS = [
   "payment.captured",
   "payment.failed",

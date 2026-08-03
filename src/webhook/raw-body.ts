@@ -1,9 +1,12 @@
 import type { BillingProvider } from "../types/config";
 import type {
+  CompleteWebhookProcessingInput,
   ProcessWebhookResult,
   RawWebhookRequest,
+  VerifyAndClaimWebhookResult,
   WebhookEvent,
   WebhookEventHandler,
+  WebhookEventRecord,
 } from "../types/webhook";
 import { BillingValidationError } from "../utils/errors";
 
@@ -183,6 +186,20 @@ export interface CreateWebhookHttpHandlerOptions {
     handler: WebhookEventHandler,
   ) => Promise<ProcessWebhookResult>;
   handler: WebhookEventHandler;
+  /**
+   * When true, write HTTP 200 immediately after signature verification + durable
+   * event-id claim, then run the handler. Duplicates / out-of-order still skip
+   * the handler. Prefer the default (ack after handler) unless the handler is
+   * slow and you accept that a crash mid-handle will not trigger provider retries.
+   */
+  fastAcknowledge?: boolean;
+  verifyAndClaimWebhook?: (
+    request: RawWebhookRequest,
+  ) => Promise<VerifyAndClaimWebhookResult>;
+  completeWebhookProcessing?: (
+    record: WebhookEventRecord,
+    outcome: CompleteWebhookProcessingInput,
+  ) => Promise<WebhookEventRecord>;
   /** Defaults to 200 for success, duplicate, and out-of-order. */
   successStatus?: number;
   /** Defaults to 400. */
@@ -205,6 +222,44 @@ export function createWebhookHttpHandler(
   return async (req, res) => {
     try {
       const request = parseWebhookRequestFromHttp(options.provider, req);
+
+      if (options.fastAcknowledge) {
+        if (
+          !options.verifyAndClaimWebhook ||
+          !options.completeWebhookProcessing
+        ) {
+          throw new BillingValidationError(
+            "fastAcknowledge requires verifyAndClaimWebhook and completeWebhookProcessing",
+            { code: "INVALID_WEBHOOK_FAST_ACK", param: "fastAcknowledge" },
+          );
+        }
+
+        const claim = await options.verifyAndClaimWebhook(request);
+        writeJson(res, successStatus, {
+          ok: true,
+          duplicate: claim.duplicate,
+          outOfOrder: claim.outOfOrder,
+          eventId: claim.record.eventId,
+          normalizedType: claim.event.normalizedType,
+          acknowledged: true,
+        });
+
+        if (!claim.shouldHandle) return;
+
+        try {
+          await options.handler(claim.event);
+          await options.completeWebhookProcessing(claim.record, {
+            status: "processed",
+          });
+        } catch (error) {
+          await options.completeWebhookProcessing(claim.record, {
+            status: "failed",
+            error,
+          });
+        }
+        return;
+      }
+
       const result = await options.processWebhook(request, options.handler);
       writeJson(res, successStatus, {
         ok: true,

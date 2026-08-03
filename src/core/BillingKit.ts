@@ -82,8 +82,10 @@ import { summarizeTax } from "../tax";
 import type { RecordTransactionInput, Transaction } from "../types/transaction";
 import type { ReportingFilter } from "../types/settlement";
 import type {
+  CompleteWebhookProcessingInput,
   ProcessWebhookResult,
   RawWebhookRequest,
+  VerifyAndClaimWebhookResult,
   WebhookEvent,
   WebhookEventHandler,
   WebhookEventRecord,
@@ -1178,6 +1180,23 @@ export class BillingKit {
     return event;
   }
 
+  /**
+   * Verify signature + claim the event id for dedupe without running the handler.
+   * Use with `completeWebhookProcessing` for a fast-ack-then-process flow.
+   */
+  verifyAndClaimWebhook(
+    request: RawWebhookRequest,
+  ): Promise<VerifyAndClaimWebhookResult> {
+    return this.webhookService.verifyAndClaimWebhook(request);
+  }
+
+  completeWebhookProcessing(
+    record: WebhookEventRecord,
+    outcome: CompleteWebhookProcessingInput,
+  ): Promise<WebhookEventRecord> {
+    return this.webhookService.completeWebhookProcessing(record, outcome);
+  }
+
   async processWebhook(
     request: RawWebhookRequest,
     handler: WebhookEventHandler,
@@ -1277,6 +1296,7 @@ export class BillingKit {
    * verify signature → normalize → dedupe by event id → run handler.
    *
    * Pair with `createRawBodyMiddleware()` or `express.raw({ type: "application/json" })`.
+   * Pass `{ fastAcknowledge: true }` to HTTP 200 right after verify+claim, then handle.
    */
   createWebhookHttpHandler(
     handler: WebhookEventHandler,
@@ -1292,7 +1312,15 @@ export class BillingKit {
       provider: this.config.provider,
       processWebhook: (request, eventHandler) =>
         this.processWebhook(request, eventHandler),
-      handler,
+      verifyAndClaimWebhook: (request) => this.verifyAndClaimWebhook(request),
+      completeWebhookProcessing: (record, outcome) =>
+        this.completeWebhookProcessing(record, outcome),
+      handler: async (event) => {
+        if (options?.fastAcknowledge) {
+          await this.entitlementService.syncWebhookEvent(event);
+        }
+        await handler(event);
+      },
       ...options,
     });
   }

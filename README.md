@@ -480,6 +480,89 @@ Always verify signatures against the **raw request body** (not a re-serialized J
 
 After rotating a Razorpay (or Stripe) webhook secret, keep the previous value in `webhookSecrets` so in-flight retries still verify — see **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**.
 
+### Idempotent webhook handling
+
+Processed event ids are stored in `webhookEventRepository` (in-memory by default). Replays are ignored (`duplicate: true`), older resource events after a newer one are marked `ignored` (`outOfOrder: true`), and the handler is **not** re-run. Prefer returning **2xx** for both cases so providers stop retrying.
+
+| Provider | Dedupe key |
+|----------|------------|
+| Stripe | Verified payload `event.id` |
+| Razorpay | `X-Razorpay-Event-Id` header (`x-razorpay-event-id`), else SHA-256 body fingerprint |
+
+```typescript
+import {
+  BillingKit,
+  createRawBodyMiddleware,
+  InMemoryWebhookEventRepository,
+} from "billing-kit";
+import express from "express";
+
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET!,
+  // Durable store for multi-instance dedupe (swap for Redis/Postgres in production)
+  webhookEventRepository: new InMemoryWebhookEventRepository(),
+});
+
+const app = express();
+
+app.post(
+  "/webhooks/razorpay",
+  createRawBodyMiddleware(),
+  billing.createWebhookHttpHandler(async (event) => {
+    // Normalized shape: event.normalizedType, event.entity.id, event.occurredAt
+    switch (event.normalizedType) {
+      case "payment.captured":
+        // fulfill — safe under provider retries
+        break;
+      case "payment.failed":
+        break;
+      case "refund.processed":
+        break;
+    }
+  }),
+);
+
+// Or: ack HTTP 200 right after verify + claim, then run the handler
+app.post(
+  "/webhooks/razorpay-fast",
+  createRawBodyMiddleware(),
+  billing.createWebhookHttpHandler(
+    async (event) => {
+      /* slower side effects */
+    },
+    { fastAcknowledge: true },
+  ),
+);
+
+// Manual fast-ack composition (verify → claim → 200 → handle)
+app.post("/webhooks/razorpay-manual", createRawBodyMiddleware(), async (req, res) => {
+  const request = billing.parseWebhookRequest({
+    rawBody: req.body,
+    headers: req.headers, // includes X-Razorpay-Event-Id when present
+  });
+  const claim = await billing.verifyAndClaimWebhook(request);
+  res.status(200).json({
+    ok: true,
+    duplicate: claim.duplicate,
+    outOfOrder: claim.outOfOrder,
+    eventId: claim.record.eventId,
+  });
+  if (!claim.shouldHandle) return;
+  try {
+    // fulfill from claim.event.normalizedType / claim.event.entity
+    await billing.completeWebhookProcessing(claim.record, { status: "processed" });
+  } catch (error) {
+    await billing.completeWebhookProcessing(claim.record, {
+      status: "failed",
+      error,
+    });
+  }
+});
+```
+
 ### Express (recommended)
 
 ```typescript
@@ -1432,14 +1515,16 @@ Statuses: `pending`, `failed`, `retrying`, `recovered`, `uncollectible`. Configu
 | Method | Description |
 |--------|-------------|
 | `verifyWebhook(rawBody, signature)` | Verify + normalize |
+| `verifyAndClaimWebhook(request)` | Verify + durable event-id claim (no handler) |
+| `completeWebhookProcessing(record, outcome)` | Mark claimed event processed / failed |
 | `processWebhook(request, handler)` | Verify, dedupe, handle |
 | `processWebhookFromHttp(req, handler)` | Parse headers/raw body, then process |
-| `parseWebhookRequest({ rawBody, headers })` | Build `RawWebhookRequest` |
-| `createWebhookHttpHandler(handler)` | Express-style HTTP adapter |
+| `parseWebhookRequest({ rawBody, headers })` | Build `RawWebhookRequest` (reads `X-Razorpay-Event-Id`) |
+| `createWebhookHttpHandler(handler, options?)` | Express-style HTTP adapter (`fastAcknowledge` optional) |
 | `createRawWebhookHandler(handler)` | `(RawWebhookRequest) => processWebhook` |
 | `listWebhookEvents()` | Persisted webhook records |
 
-Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookRequest()`, `normalizeStripeWebhook()` / `normalizeRazorpayWebhook()`, `EXPRESS_WEBHOOK_RAW_BODY`.
+Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookRequest()`, `normalizeStripeWebhook()` / `normalizeRazorpayWebhook()`, `EXPRESS_WEBHOOK_RAW_BODY`, `RAZORPAY_EVENT_ID_HEADER`.
 
 ### Diagnostics
 

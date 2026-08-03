@@ -122,6 +122,8 @@ export type {
   DisputeStatus,
   ListDisputesInput,
   UpdateDisputeEvidenceInput,
+  CompleteWebhookProcessingInput,
+  VerifyAndClaimWebhookResult,
   ReportBillingFailureInput,
   ReportBillingRecoveryInput,
   ReportingFilter,
