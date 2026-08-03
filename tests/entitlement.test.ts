@@ -138,4 +138,23 @@ describe("EntitlementService", () => {
 
     await expect(service.hasFeature("cus_1", "sso")).resolves.toBe(true);
   });
+
+  it("restores access after payment failure when recovery succeeds", async () => {
+    await service.setPlanFeatures({
+      planId: "plan_pro",
+      features: ["exports"],
+    });
+    await service.syncSubscriptionEntitlements({
+      subscription: subscription(),
+    });
+    await service.revokeFeatureAccess({
+      customerId: "cus_1",
+      source: "payment_failure",
+      reason: "card_declined",
+    });
+    await expect(service.hasFeature("cus_1", "exports")).resolves.toBe(false);
+
+    await service.restoreAfterPayment("cus_1");
+    await expect(service.hasFeature("cus_1", "exports")).resolves.toBe(true);
+  });
 });

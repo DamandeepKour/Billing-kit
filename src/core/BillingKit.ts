@@ -661,6 +661,17 @@ export class BillingKit {
     return this.entitlementService.revokeFeatureAccess(input);
   }
 
+  /** Re-activate entitlements revoked by payment failure (e.g. after recovery). */
+  restoreFeatureAccess(input: {
+    customerId?: string;
+    subscriptionId?: string;
+  }): Promise<CustomerEntitlement[]> {
+    return this.entitlementService.restoreAfterPayment(
+      input.customerId,
+      input.subscriptionId,
+    );
+  }
+
   createCustomer(input: CreateProviderCustomerInput): Promise<ProviderCustomer> {
     return this.subscriptionService.createCustomer(input);
   }

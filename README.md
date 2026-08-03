@@ -24,6 +24,7 @@ Framework integration examples: [Express](./examples/express/), [Next.js](./exam
 - **Coupons / promos** — fixed & percentage discounts, promotion codes, invoice discount lines
 - **Disputes** — fetch/list, Razorpay accept/contest, Stripe evidence, normalized webhook events
 - **Subscriptions** — plans, create, pause / resume, cancel, schedule cancellation, renew
+- **Entitlements** — plan→feature mapping, `hasFeature`, provision/revoke on subscription + webhooks
 - **Usage billing** — metered events, day/month/cycle aggregation, per-seat & consumption pricing
 - **Tax** — GST (CGST/SGST/IGST), VAT, sales tax, `autoTax`, place of supply
 - **Multi-currency** — `inr`, `usd`, `eur`, `gbp`, `aed`, `sgd` (amounts in smallest units)
@@ -1220,6 +1221,72 @@ Razorpay uses the same methods (`pause` only from `active`; resume only from `pa
 
 ---
 
+## Feature access control (entitlements)
+
+Map plans to internal feature keys, then gate product access with `hasFeature`. Subscription lifecycle methods and webhooks keep entitlements in sync (provision on create/activate/resume, revoke on cancel/pause/payment failure/dispute lost).
+
+```typescript
+import { BillingKit } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  currency: "usd",
+  // Optional: durable store for multi-instance feature checks
+  // entitlementRepository: new PostgresEntitlementRepository(),
+});
+
+// Map a plan (or product price id) to features — also accepted on createPlan({ features })
+await billing.setPlanFeatures({
+  planId: "price_pro_monthly",
+  features: ["sso", "exports", "api_access"],
+});
+
+const subscription = await billing.createSubscription({
+  customerId: "cus_123",
+  planId: "price_pro_monthly",
+});
+// → syncs entitlements automatically (source: subscription_create)
+
+if (await billing.hasFeature("cus_123", "sso")) {
+  // unlock SSO settings
+}
+
+const access = await billing.getCustomerFeatureAccess("cus_123");
+// access.features → ["api_access", "exports", "sso"]
+// access.entitlements → active/paused/revoked rows per subscription
+
+// Manual sync (e.g. after an external status change)
+await billing.syncSubscriptionEntitlements({
+  subscription: await billing.retrieveSubscription(subscription.id),
+  source: "manual",
+});
+
+// Explicit revoke / restore (payment recovery also restores payment_failure revokes)
+await billing.revokeFeatureAccess({
+  customerId: "cus_123",
+  source: "manual",
+  reason: "compliance hold",
+});
+await billing.restoreFeatureAccess({ customerId: "cus_123" });
+
+await billing.cancelSubscription(subscription.id);
+// → features revoked for that subscription
+```
+
+**Auto sync hooks** (no extra wiring required):
+
+| Trigger | Effect |
+|---------|--------|
+| `createPlan({ features })` / `setPlanFeatures` | Store mapping; refresh active entitlements for that plan |
+| `createSubscription` / `resumeSubscription` / `renewSubscription` / `retrieveSubscription` | Provision or refresh |
+| `pauseSubscription` / `cancelSubscription` / `scheduleCancellation` | Pause or revoke |
+| Webhooks (`subscription.*`, `payment.failed`, `invoice.paid`, `dispute.lost` / `dispute.won`) | Provision, revoke, or restore |
+
+Use `hasFeature(customerId, featureKey)` in middleware/guards. Persist with `entitlementRepository` in production.
+
+---
+
 ## Usage-based billing
 
 Record meter events locally, aggregate by **day**, **month**, or **billing cycle**, then turn totals into invoice line items. Use per-seat (`per_unit`) and consumption (`metered`) helpers, or tiered pricing.
@@ -1453,6 +1520,7 @@ try {
 | `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` | Bad signature / raw body / secret rotation — see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | `CouponError` | `COUPON_ERROR` | Expired / limit / min amount / inactive promo |
 | `UsageBillingError` | `USAGE_BILLING_ERROR` | Invalid usage event / price / period |
+| `EntitlementError` | `ENTITLEMENT_ERROR` | Invalid plan mapping / revoke input |
 | `CustomerProfileNotFoundError` | `CUSTOMER_PROFILE_NOT_FOUND` | Unknown `customerProfileId` |
 | `SplitValidationError` | `SPLIT_VALIDATION_ERROR` | Invalid platform/vendor payout split |
 | `InvoiceNotFoundError` | `INVOICE_NOT_FOUND` | Unknown invoice id |
@@ -1600,6 +1668,19 @@ Statuses: `pending`, `failed`, `retrying`, `recovered`, `uncollectible`. Configu
 | `renewSubscription` | Clear scheduled cancellation |
 | `retrieveSubscription` | Fetch + canonical status |
 | `reportUsage` | Stripe metered subscription usage |
+
+### Entitlements / feature access
+
+| Method | Description |
+|--------|-------------|
+| `setPlanFeatures` / `getPlanFeatures` | Map plan/product → feature keys |
+| `hasFeature(customerId, featureKey)` | Gate product access |
+| `listFeatures` / `getCustomerFeatureAccess` | Active feature set + entitlement rows |
+| `syncSubscriptionEntitlements` | Provision/refresh from subscription state |
+| `revokeFeatureAccess` / `restoreFeatureAccess` | Explicit revoke / payment-recovery restore |
+| `getSubscriptionEntitlement` | Entitlement row for one subscription |
+
+Subscription + webhook flows sync entitlements automatically. Persist with `entitlementRepository`.
 
 ### Usage-based billing
 
