@@ -3,6 +3,11 @@ import { InMemoryUsageEventRepository } from "../src/repositories";
 import {
   UsageBillingError,
   UsageBillingService,
+  calculateConsumptionAmount,
+  calculatePerSeatAmount,
+  createConsumptionPrice,
+  createPerSeatPrice,
+  resolveUsagePeriodRange,
 } from "../src/usage";
 import type { UsageAggregate, UsagePrice } from "../src/types/usage";
 
@@ -210,6 +215,45 @@ describe("UsageBillingService", () => {
   });
 });
 
+describe("usage helpers", () => {
+  it("resolves default day and month billing periods in UTC", () => {
+    const now = new Date("2026-07-15T18:30:00.000Z");
+    expect(resolveUsagePeriodRange({ period: "day", now })).toEqual({
+      from: date("2026-07-15"),
+      to: date("2026-07-16"),
+    });
+    expect(resolveUsagePeriodRange({ period: "month", now })).toEqual({
+      from: date("2026-07-01"),
+      to: date("2026-08-01"),
+    });
+    expect(() =>
+      resolveUsagePeriodRange({ period: "billing_cycle", now }),
+    ).toThrow(UsageBillingError);
+  });
+
+  it("builds per-seat and consumption prices and amounts", () => {
+    const seats = createPerSeatPrice({
+      unitAmount: 1200,
+      currency: "usd",
+    });
+    const api = createConsumptionPrice({
+      meter: "api_calls",
+      unitAmount: 2,
+      currency: "usd",
+      description: "API calls",
+    });
+
+    expect(seats).toMatchObject({
+      type: "per_unit",
+      meter: "seats",
+      unitAmount: 1200,
+    });
+    expect(api.type).toBe("metered");
+    expect(calculatePerSeatAmount(5, 1200)).toBe(6000);
+    expect(calculateConsumptionAmount(250, 2)).toBe(500);
+  });
+});
+
 describe("BillingKit usage invoices", () => {
   it("maps billing-cycle usage into an invoice", async () => {
     const billing = new BillingKit({
@@ -231,26 +275,32 @@ describe("BillingKit usage invoices", () => {
       quantity: 70,
       timestamp: date("2026-07-15"),
     });
+    await billing.recordUsageEvent({
+      customerId: "cus_usage",
+      meter: "seats",
+      quantity: 3,
+      timestamp: date("2026-07-01"),
+    });
 
     const result = await billing.generateUsageInvoice({
       usage: {
         customerId: "cus_usage",
-        meter: "api_calls",
+        meter: ["api_calls", "seats"],
         period: "billing_cycle",
         from: date("2026-07-01"),
         to: date("2026-08-01"),
       },
       prices: [
-        {
-          type: "tiered",
+        billing.createConsumptionPrice({
           meter: "api_calls",
+          unitAmount: 10,
           currency: "usd",
           description: "API calls",
-          tiers: [
-            { upTo: 100, unitAmount: 10 },
-            { upTo: "inf", unitAmount: 5 },
-          ],
-        },
+        }),
+        billing.createPerSeatPrice({
+          unitAmount: 500,
+          currency: "usd",
+        }),
       ],
       customer: { id: "cus_usage", name: "Usage Customer" },
       billingAddress: {
@@ -264,11 +314,14 @@ describe("BillingKit usage invoices", () => {
       taxMode: "none",
     });
 
-    expect(result.aggregates[0].quantity).toBe(150);
-    expect(result.lineItems).toHaveLength(2);
-    expect(result.invoice.subtotal).toBe(1250);
-    expect(result.invoice.total).toBe(1250);
-    expect(result.invoice.currency).toBe("usd");
+    expect(
+      result.aggregates.map((row) => row.quantity).sort((a, b) => a - b),
+    ).toEqual([3, 150]);
+    expect(result.invoice.subtotal).toBe(150 * 10 + 3 * 500);
+    expect(result.invoice.total).toBe(3000);
+    expect(
+      result.lineItems.some((line) => line.description.includes("Seats")),
+    ).toBe(true);
   });
 });
 

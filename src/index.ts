@@ -371,7 +371,21 @@ export type {
   WebhookHttpRequestLike,
 } from "./webhook";
 export { RouteService } from "./route";
-export { UsageBillingError, UsageBillingService } from "./usage";
+export {
+  UsageBillingError,
+  UsageBillingService,
+  calculateConsumptionAmount,
+  calculatePerSeatAmount,
+  createConsumptionPrice,
+  createPerSeatPrice,
+  resolveUsagePeriodRange,
+} from "./usage";
+export type {
+  CreateConsumptionPriceInput,
+  CreatePerSeatPriceInput,
+  ResolveUsagePeriodRangeInput,
+  UsagePeriodRange,
+} from "./usage";
 export {
   TaxEngine,
   TaxService,

@@ -13,16 +13,12 @@ import type {
   UsagePrice,
   UsageToLineItemsInput,
 } from "../types/usage";
-import { BillingKitError } from "../utils/errors";
 import { generateId } from "../utils/id";
 import { normalizeCurrency } from "../utils/currency";
+import { UsageBillingError } from "./errors";
+import { resolveUsagePeriodRange } from "./helpers";
 
-export class UsageBillingError extends BillingKitError {
-  constructor(message: string) {
-    super(message, "USAGE_BILLING_ERROR");
-    this.name = "UsageBillingError";
-  }
-}
+export { UsageBillingError } from "./errors";
 
 export class UsageBillingService {
   constructor(private readonly repository: UsageEventRepository) {}
@@ -66,7 +62,7 @@ export class UsageBillingService {
   async aggregateUsage(
     input: AggregateUsageEventsInput,
   ): Promise<UsageAggregate[]> {
-    const range = resolveRange(input);
+    const range = resolveUsagePeriodRange(input);
     const aggregationMethod = input.aggregationMethod ?? "sum";
     const events = await this.repository.list({
       customerId: input.customerId,
@@ -160,31 +156,6 @@ export class UsageBillingService {
 interface UsageRange {
   from: Date;
   to: Date;
-}
-
-function resolveRange(input: AggregateUsageEventsInput): UsageRange {
-  if ((input.from && !input.to) || (!input.from && input.to)) {
-    throw new UsageBillingError("from and to must be provided together");
-  }
-  if (input.from && input.to) {
-    if (input.from >= input.to) {
-      throw new UsageBillingError("from must be before to");
-    }
-    return { from: input.from, to: input.to };
-  }
-  if (input.period === "billing_cycle") {
-    throw new UsageBillingError(
-      "from and to are required for billing_cycle aggregation",
-    );
-  }
-
-  const now = input.now ?? new Date();
-  if (input.period === "day") {
-    const from = startOfUtcDay(now);
-    return { from, to: addUtcDays(from, 1) };
-  }
-  const from = startOfUtcMonth(now);
-  return { from, to: addUtcMonths(from, 1) };
 }
 
 function resolveBucket(

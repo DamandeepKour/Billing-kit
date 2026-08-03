@@ -1,4 +1,13 @@
+export { UsageBillingError } from "./errors";
+export { UsageBillingService } from "./UsageBillingService";
 export {
-  UsageBillingError,
-  UsageBillingService,
-} from "./UsageBillingService";
+  calculateConsumptionAmount,
+  calculatePerSeatAmount,
+  createConsumptionPrice,
+  createPerSeatPrice,
+  resolveUsagePeriodRange,
+  type CreateConsumptionPriceInput,
+  type CreatePerSeatPriceInput,
+  type ResolveUsagePeriodRangeInput,
+  type UsagePeriodRange,
+} from "./helpers";

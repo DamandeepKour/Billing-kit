@@ -24,6 +24,7 @@ Framework integration examples: [Express](./examples/express/), [Next.js](./exam
 - **Coupons / promos** — fixed & percentage discounts, promotion codes, invoice discount lines
 - **Disputes** — fetch/list, Razorpay accept/contest, Stripe evidence, normalized webhook events
 - **Subscriptions** — plans, create, pause / resume, cancel, schedule cancellation, renew
+- **Usage billing** — metered events, day/month/cycle aggregation, per-seat & consumption pricing
 - **Tax** — GST (CGST/SGST/IGST), VAT, sales tax, `autoTax`, place of supply
 - **Multi-currency** — `inr`, `usd`, `eur`, `gbp`, `aed`, `sgd` (amounts in smallest units)
 - **Webhooks** — signature verification, normalized events, idempotent processing
@@ -1219,6 +1220,105 @@ Razorpay uses the same methods (`pause` only from `active`; resume only from `pa
 
 ---
 
+## Usage-based billing
+
+Record meter events locally, aggregate by **day**, **month**, or **billing cycle**, then turn totals into invoice line items. Use per-seat (`per_unit`) and consumption (`metered`) helpers, or tiered pricing.
+
+Amounts stay in smallest currency units. Stripe `reportUsage` remains available for provider-side metered subscription items.
+
+```typescript
+import {
+  BillingKit,
+  calculateConsumptionAmount,
+  calculatePerSeatAmount,
+  createConsumptionPrice,
+  createPerSeatPrice,
+  resolveUsagePeriodRange,
+} from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "stripe",
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  currency: "usd",
+});
+
+// Record usage (API calls, seats, storage, …)
+await billing.recordUsageEvent({
+  customerId: "cus_123",
+  meter: "api_calls",
+  quantity: 120,
+  timestamp: new Date("2026-07-02T10:00:00Z"),
+  subscriptionId: "sub_123",
+});
+await billing.recordUsageEvent({
+  customerId: "cus_123",
+  meter: "seats",
+  quantity: 5,
+  timestamp: new Date("2026-07-01T00:00:00Z"),
+});
+
+// Billing period windows (UTC). billing_cycle always needs from/to.
+const july = resolveUsagePeriodRange({
+  period: "billing_cycle",
+  from: new Date("2026-07-01T00:00:00Z"),
+  to: new Date("2026-08-01T00:00:00Z"),
+});
+const today = resolveUsagePeriodRange({ period: "day" }); // start/end of UTC day
+
+const totals = await billing.aggregateUsage({
+  customerId: "cus_123",
+  meter: ["api_calls", "seats"],
+  period: "billing_cycle",
+  from: july.from,
+  to: july.to,
+  aggregationMethod: "sum", // or max | last
+});
+
+// Per-seat & consumption helpers
+const seatPrice = createPerSeatPrice({ unitAmount: 1500, currency: "usd" }); // $15/seat
+const apiPrice = createConsumptionPrice({
+  meter: "api_calls",
+  unitAmount: 2, // $0.02 per call
+  currency: "usd",
+  description: "API calls",
+});
+calculatePerSeatAmount(5, 1500); // 7500
+calculateConsumptionAmount(120, 2); // 240
+
+// Invoice with metered line items for the cycle
+const { invoice, aggregates, lineItems } = await billing.generateUsageInvoice({
+  usage: {
+    customerId: "cus_123",
+    meter: ["api_calls", "seats"],
+    period: "billing_cycle",
+    from: july.from,
+    to: july.to,
+  },
+  prices: [apiPrice, seatPrice],
+  customer: { id: "cus_123", name: "Acme" },
+  billingAddress: {
+    line1: "1 Meter Way",
+    city: "San Francisco",
+    state: "CA",
+    postalCode: "94105",
+    country: "US",
+  },
+  taxMode: "none",
+});
+
+console.log(aggregates, lineItems, invoice.subtotal, invoice.total);
+
+// Or compose manually: aggregate → line items → generateInvoice
+const lines = billing.usageToInvoiceLineItems({
+  aggregates: totals,
+  prices: [apiPrice, seatPrice],
+});
+```
+
+For Stripe subscription meters, also use `createPlan({ usageType: "metered" })` and `reportUsage({ subscriptionItemId, quantity })`.
+
+---
+
 ## Custom repository example
 
 Defaults use in-memory stores (fine for demos). For production, inject persistent repositories:
@@ -1352,6 +1452,7 @@ try {
 | `IdempotencyConflictError` | `IDEMPOTENCY_CONFLICT` | Key reused with different payload |
 | `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` | Bad signature / raw body / secret rotation — see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | `CouponError` | `COUPON_ERROR` | Expired / limit / min amount / inactive promo |
+| `UsageBillingError` | `USAGE_BILLING_ERROR` | Invalid usage event / price / period |
 | `CustomerProfileNotFoundError` | `CUSTOMER_PROFILE_NOT_FOUND` | Unknown `customerProfileId` |
 | `SplitValidationError` | `SPLIT_VALIDATION_ERROR` | Invalid platform/vendor payout split |
 | `InvoiceNotFoundError` | `INVOICE_NOT_FOUND` | Unknown invoice id |
@@ -1498,6 +1599,21 @@ Statuses: `pending`, `failed`, `retrying`, `recovered`, `uncollectible`. Configu
 | `cancelSubscription` | Cancel immediately |
 | `renewSubscription` | Clear scheduled cancellation |
 | `retrieveSubscription` | Fetch + canonical status |
+| `reportUsage` | Stripe metered subscription usage |
+
+### Usage-based billing
+
+| Method | Description |
+|--------|-------------|
+| `recordUsageEvent` / `getUsageEvent` / `listUsageEvents` | Local usage records |
+| `aggregateUsage` | Totals by `day` / `month` / `billing_cycle` |
+| `priceUsage` / `usageToInvoiceLineItems` | Price aggregates → amounts / line items |
+| `generateUsageInvoice` | Aggregate + invoice in one call |
+| `createPerSeatPrice` / `createConsumptionPrice` | Per-seat & metered price builders |
+| `calculatePerSeatAmount` / `calculateConsumptionAmount` | Quick charge math |
+| `resolveUsagePeriodRange` | UTC day/month/cycle window helper |
+
+Also: `calculatePerSeatAmount`, `createPerSeatPrice`, `resolveUsagePeriodRange` as package exports. Persist with `usageEventRepository`.
 
 ### Tax
 

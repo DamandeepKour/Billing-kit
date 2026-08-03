@@ -164,7 +164,14 @@ import { RouteService } from "../route";
 import { SubscriptionService } from "../subscription";
 import { TaxService } from "../tax";
 import { TransactionService } from "../transaction";
-import { UsageBillingService } from "../usage";
+import {
+  UsageBillingService,
+  calculateConsumptionAmount as calcConsumptionAmount,
+  calculatePerSeatAmount as calcPerSeatAmount,
+  createConsumptionPrice as buildConsumptionPrice,
+  createPerSeatPrice as buildPerSeatPrice,
+  resolveUsagePeriodRange as resolveUsagePeriod,
+} from "../usage";
 import {
   NoopLogger,
   ObservabilityService,
@@ -830,6 +837,32 @@ export class BillingKit {
       lineItems,
     });
     return { invoice, aggregates, lineItems };
+  }
+
+  calculatePerSeatAmount(seats: number, unitAmount: number): number {
+    return calcPerSeatAmount(seats, unitAmount);
+  }
+
+  calculateConsumptionAmount(quantity: number, unitAmount: number): number {
+    return calcConsumptionAmount(quantity, unitAmount);
+  }
+
+  createPerSeatPrice(
+    input: Parameters<typeof buildPerSeatPrice>[0],
+  ): ReturnType<typeof buildPerSeatPrice> {
+    return buildPerSeatPrice(input);
+  }
+
+  createConsumptionPrice(
+    input: Parameters<typeof buildConsumptionPrice>[0],
+  ): ReturnType<typeof buildConsumptionPrice> {
+    return buildConsumptionPrice(input);
+  }
+
+  resolveUsagePeriodRange(
+    input: Parameters<typeof resolveUsagePeriod>[0],
+  ): ReturnType<typeof resolveUsagePeriod> {
+    return resolveUsagePeriod(input);
   }
 
   calculateGST(input: GSTInput): TaxBreakdown {
