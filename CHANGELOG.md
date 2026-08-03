@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Transfer/payout idempotency docs (fingerprint + response reuse, safe retries for `createTransfer` / `splitPayment`)
 - Entitlements docs (`hasFeature`, plan→feature mapping, subscription/webhook sync); `restoreFeatureAccess` helper
 - Usage-based billing docs + per-seat/consumption helpers (`createPerSeatPrice`, `resolveUsagePeriodRange`, metered invoices)
 - Webhook idempotency docs + fast-ack helpers (`verifyAndClaimWebhook`, `completeWebhookProcessing`, `fastAcknowledge`); Razorpay `X-Razorpay-Event-Id` dedupe examples

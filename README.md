@@ -972,6 +972,49 @@ console.log(details.status, details.utr, details.fees);
 
 Over-allocation, empty transfer rules, and invalid commissions throw `SplitValidationError`. Stripe (and other non-Route gateways) throw `UnsupportedOperationError`.
 
+### Safe retries (transfer / payout idempotency)
+
+Pass a stable `idempotencyKey` (4–36 chars: letters, numbers, `_`, `-`) on `createTransfer`, `splitPayment`, and `reverseTransfer`. billing-kit stores a **request fingerprint** plus the **provider response** in `transferRequestRepository` (in-memory by default).
+
+| Retry scenario | Behavior |
+|----------------|----------|
+| Same key + same payload | Returns the stored transfer/split result — **no second provider transfer** |
+| Same key + different payload | Throws `IdempotencyConflictError` |
+| Same key while first call is in flight | Throws `IdempotencyInFlightError` |
+| Definitive failure, then retry with same key | Allowed (claim is reclaimable) |
+| Ambiguous / timeout (“uncertain”) | Use `reconcileTransferRequest(key)` — does not create a new logical payout |
+
+Direct Razorpay transfers also send `X-Transfer-Idempotency` to the provider. Pair network retries (`withBackoffRetry`) with the same key:
+
+```typescript
+import { BillingKit, withBackoffRetry } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: process.env.RAZORPAY_KEY_ID!,
+  secretKey: process.env.RAZORPAY_KEY_SECRET!,
+  // Durable store for multi-instance payout safety:
+  // transferRequestRepository: new RedisTransferRequestRepository(),
+});
+
+await withBackoffRetry(
+  () =>
+    billing.createTransfer({
+      linkedAccountId: "acc_vendor",
+      amount: 2500,
+      paymentId: "pay_xxx",
+      idempotencyKey: "payout_ord_55", // reuse on every retry
+    }),
+  { maxRetries: 3, initialDelayMs: 100 },
+);
+
+const stored = await billing.getTransferRequest("payout_ord_55");
+// stored.fingerprint, stored.result, stored.providerResponse, stored.providerTransferIds
+
+// After a timeout / uncertain claim:
+await billing.reconcileTransferRequest("payout_ord_55");
+```
+
 ---
 
 ## Billing audit logs
@@ -1516,7 +1559,8 @@ try {
 | `StripeCardError` | `STRIPE_CARD_ERROR` | Card declined |
 | `StripeAuthenticationError` | `STRIPE_AUTHENTICATION_ERROR` | Bad Stripe key |
 | `StripeInvalidRequestError` | `STRIPE_INVALID_REQUEST` | Invalid Stripe params |
-| `IdempotencyConflictError` | `IDEMPOTENCY_CONFLICT` | Key reused with different payload |
+| `IdempotencyConflictError` | `IDEMPOTENCY_CONFLICT` | Same key, different request fingerprint (payments/transfers) |
+| `IdempotencyInFlightError` | `IDEMPOTENCY_IN_FLIGHT` | Same key still processing |
 | `WebhookVerificationError` | `WEBHOOK_VERIFICATION_FAILED` | Bad signature / raw body / secret rotation — see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | `CouponError` | `COUPON_ERROR` | Expired / limit / min amount / inactive promo |
 | `UsageBillingError` | `USAGE_BILLING_ERROR` | Invalid usage event / price / period |
@@ -1603,7 +1647,10 @@ assertSmallestUnitAmount(4900, { currency: "usd" }); // ok
 | `createTransfer(input)` | Direct or payment-sourced transfer |
 | `reverseTransfer(input)` | Full / partial transfer reversal |
 | `getSettlementDetails(input)` | Settlement or transfer status |
-| `getTransferRequest` / `listTransferRequests` / `reconcileTransferRequest` | Idempotency + reconciliation |
+| `getTransferRequest` / `listTransferRequests` | Lookup stored fingerprint + response |
+| `reconcileTransferRequest(key)` | Resolve uncertain / timed-out payout claims |
+
+Pass `idempotencyKey` on `createTransfer` / `splitPayment` / `reverseTransfer` for safe retries (see **Safe retries** above). Persist with `transferRequestRepository`.
 
 Also: `calculateSplitAllocations` (pure helper). Transaction records store `routedAmount`, `platformFee`, and `vendorAmount`.
 
