@@ -29,6 +29,7 @@ Framework integration examples: [Express](./examples/express/), [Next.js](./exam
 - **Tax** — GST (CGST/SGST/IGST), VAT, sales tax, `autoTax`, place of supply
 - **Multi-currency** — `inr`, `usd`, `eur`, `gbp`, `aed`, `sgd` (amounts in smallest units)
 - **Webhooks** — signature verification, normalized events, idempotent processing
+- **Webhook testing** — Stripe/Razorpay fixtures, local signature helpers (`billing-kit/testing`)
 - **Billing portal** — Stripe Customer Portal sessions and payment-method update flows
 - **Pluggable storage** — inject your own invoice / transaction / webhook repositories
 - **Idempotency** — safe retries for payments, refunds, and Route transfers
@@ -671,7 +672,87 @@ Verify-only (no handler / persistence):
 const event = billing.verifyWebhook(rawBody, signature);
 ```
 
-Local fixtures: `import { ... } from "billing-kit/testing"`.
+---
+
+## Local webhook testing
+
+Use the `billing-kit/testing` entrypoint for mock Stripe / Razorpay payloads, local signature generation, and signed raw-body requests — no live provider required.
+
+```typescript
+import { BillingKit } from "billing-kit";
+import {
+  createMockRazorpayPaymentCaptured,
+  createMockRazorpayRefundProcessed,
+  createMockStripePaymentIntentSucceeded,
+  createMockStripeChargeRefunded,
+  createMockStripeSubscription,
+  createSignedWebhookRequest,
+  createSignedRazorpayWebhookRequest,
+  createSignedStripeWebhookRequest,
+  formatWebhookCurl,
+  generateRazorpayWebhookSignature,
+  generateStripeWebhookSignature,
+  webhookFixtures,
+} from "billing-kit/testing";
+
+const razorpaySecret = "whsec_rzp_test";
+const stripeSecret = "whsec_stripe_test";
+
+// Sample raw-body fixtures (JSON string + parsed object)
+const rzpPay = createMockRazorpayPaymentCaptured({ id: "pay_1", amount: 5000 });
+const stripePay = createMockStripePaymentIntentSucceeded({ id: "pi_1", amount: 5000 });
+// rzpPay.body / stripePay.body → exact raw body to POST
+
+// Sign locally
+const rzpSig = generateRazorpayWebhookSignature(rzpPay.body, razorpaySecret);
+const stripeSig = generateStripeWebhookSignature(stripePay.body, stripeSecret);
+
+// Or build a full signed request (headers + rawBody + signature)
+const signed = createSignedWebhookRequest({
+  provider: "razorpay",
+  payload: rzpPay,
+  secret: razorpaySecret,
+  eventId: "evt_local_1", // sets X-Razorpay-Event-Id for dedupe tests
+  asBuffer: true,
+});
+
+const billing = new BillingKit({
+  provider: "razorpay",
+  keyId: "rzp_test",
+  secretKey: "secret",
+  webhookSecret: razorpaySecret,
+});
+
+// Verify / process in unit tests
+const event = billing.verifyWebhook(signed.rawBody, signed.signature);
+// event.normalizedType → "payment.captured"
+
+await billing.processWebhook(signed, async (evt) => {
+  // assert side effects from evt.entity.id / evt.normalizedType
+});
+
+// Curl for a local Express/Next route (POST the exact signed body)
+console.log(
+  formatWebhookCurl({
+    url: "http://localhost:3000/webhooks/razorpay",
+    request: signed,
+  }),
+);
+
+// Catalog of common fixtures
+webhookFixtures.razorpay.paymentCaptured();
+webhookFixtures.stripe.invoicePaid();
+```
+
+| Helper | Purpose |
+|--------|---------|
+| `createMockRazorpay*` / `createMockStripe*` | Sample event payloads (`body` = raw JSON) |
+| `generateRazorpayWebhookSignature` / `generateStripeWebhookSignature` | Local HMAC / Stripe test header |
+| `createSigned*WebhookRequest` | `{ rawBody, signature, headers }` ready for `processWebhook` |
+| `formatWebhookCurl` | Print a curl that preserves the signed raw body |
+| `webhookFixtures` | Shortcut map of common payment/refund/subscription/dispute events |
+
+CLI examples: [examples/testing](./examples/testing/README.md). Signature failures: [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 
 Subscription lifecycle simulations (Stripe Test Clock style — no live API):
 
@@ -1769,6 +1850,8 @@ Also: `calculatePerSeatAmount`, `createPerSeatPrice`, `resolveUsagePeriodRange` 
 | `listWebhookEvents()` | Persisted webhook records |
 
 Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookRequest()`, `normalizeStripeWebhook()` / `normalizeRazorpayWebhook()`, `EXPRESS_WEBHOOK_RAW_BODY`, `RAZORPAY_EVENT_ID_HEADER`.
+
+Testing (`billing-kit/testing`): `createMockStripe*` / `createMockRazorpay*`, `generate*WebhookSignature`, `createSignedWebhookRequest`, `formatWebhookCurl`, `webhookFixtures`.
 
 ### Diagnostics
 
