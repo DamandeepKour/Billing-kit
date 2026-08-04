@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - npm publish readiness: `tsup` config, stricter package validation (exports smoke load), keywords/docs for `billing-kit` + `billing-kit/testing`
 - Webhook testing docs (`billing-kit/testing` fixtures, local signatures, `createSignedWebhookRequest`, curl helper)
+
+### Changed
+
+- README rewritten for clearer overview, install/quick start, config, Stripe/Razorpay/tax/currency/refund/subscription/webhook/repository examples, API reference, and smallest-unit amount notes
 - Transfer/payout idempotency docs (fingerprint + response reuse, safe retries for `createTransfer` / `splitPayment`)
 - Entitlements docs (`hasFeature`, plan→feature mapping, subscription/webhook sync); `restoreFeatureAccess` helper
 - Usage-based billing docs + per-seat/consumption helpers (`createPerSeatPrice`, `resolveUsagePeriodRange`, metered invoices)
