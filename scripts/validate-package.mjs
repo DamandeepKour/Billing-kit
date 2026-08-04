@@ -110,6 +110,14 @@ function validatePackageJson(pkg) {
     fail('exports["./testing"] must define types, import, and require');
   }
 
+  if (!Array.isArray(pkg.keywords) || pkg.keywords.length < 5) {
+    fail("package.json keywords should list discovery terms");
+  }
+
+  if (pkg.homepage == null || pkg.bugs?.url == null) {
+    fail("package.json homepage and bugs.url are required");
+  }
+
   if (errors.length === 0) {
     ok("package.json metadata and exports");
   }
@@ -176,17 +184,25 @@ function validateDocs() {
 
 async function smokeLoad() {
   try {
-    require(join(root, "dist/index.js"));
+    const cjs = require(join(root, "dist/index.js"));
     require(join(root, "dist/testing/index.js"));
-    ok("CJS require(dist)");
+    if (typeof cjs.BillingKit !== "function") {
+      fail("CJS export missing BillingKit");
+    } else {
+      ok("CJS require(dist) exports BillingKit");
+    }
   } catch (error) {
     fail(`CJS require failed: ${error instanceof Error ? error.message : error}`);
   }
 
   try {
-    await import(pathToFileURL(join(root, "dist/index.mjs")).href);
+    const esm = await import(pathToFileURL(join(root, "dist/index.mjs")).href);
     await import(pathToFileURL(join(root, "dist/testing/index.mjs")).href);
-    ok("ESM import(dist)");
+    if (typeof esm.BillingKit !== "function") {
+      fail("ESM export missing BillingKit");
+    } else {
+      ok("ESM import(dist) exports BillingKit");
+    }
   } catch (error) {
     fail(`ESM import failed: ${error instanceof Error ? error.message : error}`);
   }
@@ -254,7 +270,8 @@ function validateTarballContents(pkg) {
 
     if (!errors.some((message) => message.includes("tarball"))) {
       ok(`npm pack tarball contains required files (${entries.size} entries)`);
-    }  } catch (error) {
+    }
+  } catch (error) {
     fail(
       `npm pack validation failed: ${
         error instanceof Error ? error.message : error

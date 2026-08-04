@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- npm publish readiness: `tsup` config, stricter package validation (exports smoke load), keywords/docs for `billing-kit` + `billing-kit/testing`
 - Webhook testing docs (`billing-kit/testing` fixtures, local signatures, `createSignedWebhookRequest`, curl helper)
 - Transfer/payout idempotency docs (fingerprint + response reuse, safe retries for `createTransfer` / `splitPayment`)
 - Entitlements docs (`hasFeature`, plan→feature mapping, subscription/webhook sync); `restoreFeatureAccess` helper

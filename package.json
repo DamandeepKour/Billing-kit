@@ -25,6 +25,8 @@
     "subscriptions",
     "refunds",
     "webhooks",
+    "entitlements",
+    "idempotency",
     "pdf",
     "sdk",
     "typescript",
@@ -70,7 +72,7 @@
     "provenance": true
   },
   "scripts": {
-    "build": "tsup src/index.ts src/testing/index.ts --format cjs,esm --dts --clean",
+    "build": "tsup --config tsup.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "lint": "eslint src tests --ext .ts",
