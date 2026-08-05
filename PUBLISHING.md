@@ -49,7 +49,8 @@ Write entries for **users of the library** (what changed and why it matters), no
 ```bash
 git checkout main
 git pull
-npm run ci              # lint + typecheck + test + build + pack validation
+npm run ci              # lint + typecheck + test + build + release:check + pack validation
+npm run release:check -- --release   # require CHANGELOG section for package.json version
 npm publish --dry-run   # runs prepublishOnly + prepack hooks
 ```
 
@@ -58,6 +59,7 @@ Confirm:
 - [ ] CI is green on `main`
 - [ ] `CHANGELOG.md` lists the upcoming version
 - [ ] `npm run validate:pack` passes
+- [ ] `npm run release:check -- --release` passes
 - [ ] No secrets in the package (`npm pack --dry-run` / inspect tarball)
 - [ ] Trusted Publisher on npm points at `publish.yml` (for OIDC releases)
 
@@ -113,9 +115,11 @@ git push origin vX.Y.Z
 Pushing the annotated tag runs [`.github/workflows/publish.yml`](./.github/workflows/publish.yml):
 
 - Verifies `vX.Y.Z` matches `package.json` version
+- Runs `npm run release:check -- --release` (CHANGELOG section required)
 - Runs `npm run ci`
 - Publishes with OIDC (`id-token: write`) — **no `NPM_TOKEN` secret**
 - Emits provenance automatically for this public repo (`publishConfig.provenance: true`)
+- Creates a GitHub Release using the matching `CHANGELOG.md` section
 
 `prepublishOnly` / `prepack` still run inside `npm publish`. Published files are whatever `package.json` → `files` allows (`dist`, `README.md`, `LICENSE`, `CHANGELOG.md`).
 
@@ -131,13 +135,14 @@ Prefer restoring the OIDC workflow instead of relying on long-lived tokens.
 
 ### 4. GitHub release
 
-Tag push already published the package. Create a GitHub Release from the tag (UI or CLI):
+Tag push already published the package **and** created the GitHub Release (CHANGELOG section via `scripts/extract-changelog.mjs`).
+
+Manual fallback if needed:
 
 ```bash
-gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
+npm run release:notes -- --version X.Y.Z --out release-notes.md
+gh release create vX.Y.Z --title "vX.Y.Z" --notes-file release-notes.md
 ```
-
-Prefer pasting the matching `CHANGELOG.md` section as the release notes.
 
 ### 5. Verify
 
@@ -157,6 +162,8 @@ On the package page, npm should show a **Provenance** badge for the version publ
 npm run build
 npm run validate:package   # docs + dist + exports + smoke load
 npm run validate:pack      # above + npm pack tarball contents
+npm run release:check      # workflow / SemVer / changelog / publishConfig checks
+npm run release:check -- --release --pack
 npm pack --dry-run         # list files that would be published
 npm publish --dry-run      # simulate publish (runs lifecycle hooks)
 ```
@@ -189,10 +196,10 @@ Do not force-unpublish except in rare security cases (npm policy applies).
 [ ] CHANGELOG.md updated for X.Y.Z
 [ ] Version bumped (package.json + git tag vX.Y.Z)
 [ ] Trusted publisher on npm points at publish.yml (OIDC)
+[ ] npm run release:check -- --release passes
 [ ] npm run validate:pack passes
 [ ] npm publish --dry-run looks correct
-[ ] Tag pushed; Publish workflow succeeded (provenance)
-[ ] GitHub Release created
+[ ] Tag pushed; Publish workflow succeeded (provenance + GitHub Release)
 [ ] npm view billing-kit version matches
 [ ] Provenance visible on the npm package version page
 ```

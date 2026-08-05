@@ -24,6 +24,7 @@ Registry: https://registry.npmjs.org/
 - [x] CI workflow runs lint, typecheck, test, build, pack validation
 - [x] `npm run ci` passes locally
 - [x] `npm run validate:pack` passes
+- [x] `npm run release:check -- --release` passes
 - [x] `npm publish --dry-run` succeeds (no upload)
 - [x] Tarball contents reviewed (14 files; no `src/` / `tests/`)
 - [ ] Working tree committed on `main` (include this checklist + changelog updates)

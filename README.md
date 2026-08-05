@@ -706,12 +706,17 @@ npm test                  # jest
 npm run build             # tsup → dist (CJS + ESM + .d.ts)
 npm run validate:package  # docs + dist entrypoints + smoke load
 npm run validate:pack     # validate:package + npm tarball contents
-npm run ci                # lint + typecheck + test + build + validate:pack
+npm run release:check     # SemVer / changelog / workflow / publish safety checks
+npm run release:notes     # print CHANGELOG section for package.json version
+npm run ci                # lint + typecheck + test + build + release:check + validate:pack
 npm run format            # prettier
 ```
 
-GitHub Actions runs the same checks on Node 18 / 20 / 22.  
-`prepublishOnly` runs lint, typecheck, and tests; `prepack` builds and validates entrypoints.
+GitHub Actions CI runs the same checks on Node 18 / 20 / 22 (and uploads an `npm pack` artifact).  
+`prepublishOnly` runs lint, typecheck, tests, and release checks; `prepack` builds and validates entrypoints.  
+Pushing a `v*` tag runs the Publish workflow (OIDC provenance + GitHub Release from CHANGELOG).
+
+See [PUBLISHING.md](./PUBLISHING.md) for the full release flow.
 
 ---
 

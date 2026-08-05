@@ -79,9 +79,11 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "validate:package": "node scripts/validate-package.mjs",
     "validate:pack": "node scripts/validate-package.mjs --pack",
+    "release:check": "node scripts/release-check.mjs",
+    "release:notes": "node scripts/extract-changelog.mjs",
     "prepack": "npm run build && npm run validate:package",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm test",
-    "ci": "npm run lint && npm run typecheck && npm test && npm run build && npm run validate:pack"
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run release:check -- --release",
+    "ci": "npm run lint && npm run typecheck && npm test && npm run build && npm run release:check && npm run validate:pack"
   },
   "dependencies": {
     "pdfkit": "^0.16.0",

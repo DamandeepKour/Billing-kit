@@ -44,5 +44,25 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Validate package contents
+      - name: Release safety checks
+        run: npm run release:check
+
+      - name: Validate package contents (npm pack)
         run: npm run validate:pack
+
+      - name: Upload packed tarball (Node 22)
+        if: matrix.node-version == '22.x'
+        run: |
+          mkdir -p artifacts
+          npm pack --pack-destination artifacts
+          ls -la artifacts
+        # Inspect CI artifacts before cutting a release tag.
+
+      - name: Persist npm pack artifact
+        if: matrix.node-version == '22.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: billing-kit-pack
+          path: artifacts/*.tgz
+          if-no-files-found: error
+          retention-days: 14

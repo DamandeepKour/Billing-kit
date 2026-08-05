@@ -1,4 +1,5 @@
-# Publishes billing-kit to npm with OIDC trusted publishing + provenance.
+# Publishes billing-kit to npm with OIDC trusted publishing + provenance,
+# then creates a GitHub Release from the matching CHANGELOG section.
 # One-time setup on npmjs.com → Package → Settings → Trusted Publisher:
 #   Provider: GitHub Actions
 #   Organization/user: DamandeepKour
@@ -13,7 +14,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write # Create GitHub Release for the tag
   id-token: write # Required for npm OIDC / provenance
 
 concurrency:
@@ -22,7 +23,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish to npm
+    name: Publish to npm + GitHub Release
     runs-on: ubuntu-latest
     environment: npm
     steps:
@@ -37,6 +38,7 @@ jobs:
           # Do not cache package manager state for release builds
 
       - name: Verify tag matches package.json version
+        id: version
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(node -p "require('./package.json').version")"
@@ -45,9 +47,13 @@ jobs:
             exit 1
           fi
           echo "Publishing billing-kit@$PKG from tag v$TAG"
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Release safety checks (require changelog section)
+        run: npm run release:check -- --release
 
       - name: Lint, typecheck, test, build, pack validation
         run: npm run ci
@@ -56,3 +62,20 @@ jobs:
         # Trusted publishing exchanges a short-lived OIDC token — no NPM_TOKEN secret.
         # Provenance attestations are generated automatically for public repos.
         run: npm publish --access public --provenance
+
+      - name: Extract CHANGELOG notes for this version
+        run: |
+          node scripts/extract-changelog.mjs \
+            --version "${{ steps.version.outputs.version }}" \
+            --out release-notes.md
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ steps.version.outputs.version }}
+          body_file: release-notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: false
