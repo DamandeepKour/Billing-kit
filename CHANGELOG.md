@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Expanded unit tests for GST intra/inter-state, VAT/generic tax rules, multi-currency, invoice totals, refunds, subscriptions, invalid config, and zero/negative amount edge cases
 - npm publish readiness: `tsup` config, stricter package validation (exports smoke load), keywords/docs for `billing-kit` + `billing-kit/testing`
 - Webhook testing docs (`billing-kit/testing` fixtures, local signatures, `createSignedWebhookRequest`, curl helper)
 
