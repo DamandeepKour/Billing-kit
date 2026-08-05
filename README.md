@@ -16,7 +16,7 @@ import { createMockStripeEvent } from "billing-kit/testing";
 
 **Important:** all monetary amounts are **integers in the smallest currency unit** (paise / cents). See [Amounts](#amounts-smallest-currency-units).
 
-Related docs: [CHANGELOG.md](./CHANGELOG.md) · [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) · [examples/](./examples/) (Express, Next.js, NestJS)
+Related docs: [CHANGELOG.md](./CHANGELOG.md) · [UPGRADING.md](./UPGRADING.md) · [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) · [PUBLISHING.md](./PUBLISHING.md) · [VERSIONING.md](./VERSIONING.md) · [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) · [examples/](./examples/) (Express, Next.js, NestJS)
 
 ---
 
@@ -578,7 +578,7 @@ import {
 } from "billing-kit/testing";
 ```
 
-See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for raw-body and secret-rotation issues, and [examples/testing](./examples/testing/) for curl helpers.
+See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for webhook signatures, secret rotation, retries/duplicates, and publish failures. Local fixtures: [examples/testing](./examples/testing/).
 
 ---
 
@@ -716,7 +716,7 @@ GitHub Actions CI runs the same checks on Node 18 / 20 / 22 (and uploads an `npm
 `prepublishOnly` runs lint, typecheck, tests, and release checks; `prepack` builds and validates entrypoints.  
 Pushing a `v*` tag runs the Publish workflow (OIDC provenance + GitHub Release from CHANGELOG).
 
-See [PUBLISHING.md](./PUBLISHING.md) for the full release flow.
+See [PUBLISHING.md](./PUBLISHING.md) for the publish guide, [VERSIONING.md](./VERSIONING.md) for SemVer policy, [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) for the per-release checklist, and [UPGRADING.md](./UPGRADING.md) for consumer migration notes.
 
 ---
 

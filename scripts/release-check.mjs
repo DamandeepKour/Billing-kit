@@ -54,6 +54,10 @@ function main() {
   mustExist("LICENSE");
   mustExist("README.md");
   mustExist("PUBLISHING.md");
+  mustExist("VERSIONING.md");
+  mustExist("UPGRADING.md");
+  mustExist("TROUBLESHOOTING.md");
+  mustExist("RELEASE_CHECKLIST.md");
   mustExist(".github/workflows/ci.yml");
   mustExist(".github/workflows/publish.yml");
   mustExist("scripts/validate-package.mjs");

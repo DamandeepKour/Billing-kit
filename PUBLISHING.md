@@ -2,30 +2,56 @@
 
 Maintainer notes for versioning, changelog updates, and publishing `billing-kit` to npm.
 
+**Related docs**
+
+| Doc | Purpose |
+|-----|---------|
+| [VERSIONING.md](./VERSIONING.md) | SemVer policy and public API surface |
+| [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) | Copy-paste checklist per release |
+| [UPGRADING.md](./UPGRADING.md) | Consumer upgrade / migration notes |
+| [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) | Webhooks, retries, duplicates, publish failures |
+| [CHANGELOG.md](./CHANGELOG.md) | User-facing release notes |
+
+---
+
+## Quick path (npm publish)
+
+Preferred production path — **do not** publish from a laptop:
+
+```bash
+# 1. Prep on main
+git checkout main && git pull
+# Move [Unreleased] → ## [X.Y.Z] - YYYY-MM-DD in CHANGELOG.md
+npm version patch -m "chore: release v%s"   # or minor / major
+npm run ci
+npm run release:check -- --release --pack
+npm publish --dry-run
+
+# 2. Push code + tag (triggers .github/workflows/publish.yml)
+git push origin main
+git push origin vX.Y.Z
+
+# 3. Confirm
+gh run watch
+npm view billing-kit version
+```
+
+The Publish workflow:
+
+1. Checks `vX.Y.Z` matches `package.json`
+2. Runs `release:check --release` and `npm run ci`
+3. Publishes with OIDC provenance (`publishConfig.provenance: true`)
+4. Creates a GitHub Release from the matching CHANGELOG section
+
+One-time npm setup: Package → Settings → **Trusted Publisher** → GitHub Actions → workflow `publish.yml` (repo `DamandeepKour/Billing-kit`).
+
+---
+
 ## Versioning
 
-This package follows [Semantic Versioning](https://semver.org/): **MAJOR.MINOR.PATCH**.
+See **[VERSIONING.md](./VERSIONING.md)** for the full policy.
 
-| Change | Bump | Examples |
-|--------|------|----------|
-| Breaking public API | **MAJOR** | Renamed/removed exports, changed default amounts semantics, stricter required config that breaks existing callers |
-| Backward-compatible features | **MINOR** | New methods, optional config fields, new normalized webhook types |
-| Backward-compatible fixes | **PATCH** | Bug fixes, docs, CI, internal refactors with no API change |
-
-### Public API surface
-
-Treat these as the semver contract:
-
-- Package exports: `billing-kit` and `billing-kit/testing`
-- Types and classes re-exported from `src/index.ts` / `src/testing/index.ts`
-- Documented `BillingKit` methods and config (`BillingKitConfig`)
-- Normalized webhook event shapes (`normalizedType`, `entity`, etc.)
-
-Internal modules under `src/` that are not exported may change without a major bump.
-
-### Pre-1.x note
-
-`1.0.0` is the first stable line. After `1.0.0`, do not publish breaking changes without a major version bump.
+Summary: **MAJOR.MINOR.PATCH** SemVer. Breaking public API → major; features → minor; fixes/docs/CI → patch. First stable line is `1.0.0`.
 
 ---
 
@@ -37,12 +63,13 @@ Update [`CHANGELOG.md`](./CHANGELOG.md) for every release:
 2. Group under `Added` / `Changed` / `Fixed` / `Deprecated` / `Removed` / `Security` as needed
 3. Leave an empty **[Unreleased]** section at the top for ongoing work
 4. Update the compare links at the bottom of the file
+5. If the change affects callers, add a short note in [UPGRADING.md](./UPGRADING.md)
 
 Write entries for **users of the library** (what changed and why it matters), not commit lists.
 
 ---
 
-## Release flow
+## Release flow (detailed)
 
 ### 1. Prepare
 
@@ -62,6 +89,7 @@ Confirm:
 - [ ] `npm run release:check -- --release` passes
 - [ ] No secrets in the package (`npm pack --dry-run` / inspect tarball)
 - [ ] Trusted Publisher on npm points at `publish.yml` (for OIDC releases)
+- [ ] [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) filled for this version
 
 ### 2. Bump the version
 
@@ -77,7 +105,7 @@ npm version major -m "chore: release v%s"
 Or set the version manually in `package.json`, then:
 
 ```bash
-git add package.json package-lock.json CHANGELOG.md
+git add package.json package-lock.json CHANGELOG.md UPGRADING.md RELEASE_CHECKLIST.md
 git commit -m "chore: release vX.Y.Z"
 git tag -a vX.Y.Z -m "vX.Y.Z"
 ```
@@ -128,6 +156,8 @@ Pushing the annotated tag runs [`.github/workflows/publish.yml`](./.github/workf
 Only if Actions is unavailable. Local publishes do **not** get trusted-publisher provenance:
 
 ```bash
+npm run ci
+npm run release:check -- --release --pack
 npm publish --access public
 ```
 
@@ -156,17 +186,48 @@ On the package page, npm should show a **Provenance** badge for the version publ
 
 ---
 
+## npm publish steps (reference)
+
+| Step | Command / action | Notes |
+|------|------------------|-------|
+| 1 | Update CHANGELOG + UPGRADING | Move Unreleased → version section |
+| 2 | `npm version <patch\|minor\|major>` | Bumps `package.json` + creates tag (or tag later) |
+| 3 | `npm run ci` | Lint, typecheck, test, build, release:check, pack |
+| 4 | `npm run release:check -- --release` | Requires `## [X.Y.Z]` in CHANGELOG |
+| 5 | `npm publish --dry-run` | Runs `prepublishOnly` + `prepack`; no upload |
+| 6 | `git push origin main && git push origin vX.Y.Z` | Triggers Publish workflow |
+| 7 | Watch Actions + check npm | Provenance badge + `npm view` |
+| 8 | Smoke install | Fresh project `npm install billing-kit@X.Y.Z` |
+
+Lifecycle hooks:
+
+- **`prepublishOnly`**: lint → typecheck → test → `release:check --release`
+- **`prepack`**: build → `validate:package` (docs, exports, CJS/ESM smoke load)
+
+Safety scripts:
+
+```bash
+npm run validate:package   # docs + dist + exports + smoke load
+npm run validate:pack      # above + npm pack tarball contents
+npm run release:check      # SemVer / changelog / workflow / publishConfig
+npm run release:notes      # print CHANGELOG section for current version
+```
+
+---
+
 ## Dry-run & packing
 
 ```bash
 npm run build
-npm run validate:package   # docs + dist + exports + smoke load
-npm run validate:pack      # above + npm pack tarball contents
-npm run release:check      # workflow / SemVer / changelog / publishConfig checks
+npm run validate:package
+npm run validate:pack
+npm run release:check
 npm run release:check -- --release --pack
-npm pack --dry-run         # list files that would be published
-npm publish --dry-run      # simulate publish (runs lifecycle hooks)
+npm pack --dry-run
+npm publish --dry-run
 ```
+
+Inspect the tarball: it must include `dist/`, `README.md`, `LICENSE`, `CHANGELOG.md`, and must **not** include `src/`, `tests/`, `examples/`, or `.github/`.
 
 ---
 
@@ -174,7 +235,8 @@ npm publish --dry-run      # simulate publish (runs lifecycle hooks)
 
 1. Fix on `main` (or a short-lived branch → PR)
 2. Add a **Fixed** entry under Unreleased → cut as patch
-3. `npm version patch` → push tag `v*` → GitHub Actions publishes with provenance → GitHub release
+3. Note any caller impact in [UPGRADING.md](./UPGRADING.md)
+4. `npm version patch` → push tag `v*` → GitHub Actions publishes with provenance → GitHub release
 
 ---
 
@@ -187,24 +249,12 @@ npm does not allow reusing a version. If a bad release ships:
 
 Do not force-unpublish except in rare security cases (npm policy applies).
 
+Publish / CI failures: see [TROUBLESHOOTING.md → Release & npm publish](./TROUBLESHOOTING.md#release--npm-publish).
+
 ---
 
-## Checklist (copy per release)
+## Checklist
 
-```text
-[ ] CI green on main
-[ ] CHANGELOG.md updated for X.Y.Z
-[ ] Version bumped (package.json + git tag vX.Y.Z)
-[ ] Trusted publisher on npm points at publish.yml (OIDC)
-[ ] npm run release:check -- --release passes
-[ ] npm run validate:pack passes
-[ ] npm publish --dry-run looks correct
-[ ] Tag pushed; Publish workflow succeeded (provenance + GitHub Release)
-[ ] npm view billing-kit version matches
-[ ] Provenance visible on the npm package version page
-```
+Use the full checklist in **[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)** (copy the blank template for each release).
 
-### First stable release (`1.0.0`)
-
-Use the filled checklist in **[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)**.  
-Prep items are marked complete; publish steps stay unchecked until you intentionally run `npm publish`.
+First stable release prep history lives in the same file under **Release log: 1.0.0**.

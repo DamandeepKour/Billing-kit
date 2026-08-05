@@ -103,12 +103,38 @@ describe("release automation / workflows", () => {
   });
 });
 
+describe("release automation / documentation", () => {
+  it("covers publish, versioning, checklist, troubleshooting, and upgrades", () => {
+    const publishing = read("PUBLISHING.md");
+    const versioning = read("VERSIONING.md");
+    const checklist = read("RELEASE_CHECKLIST.md");
+    const troubleshooting = read("TROUBLESHOOTING.md");
+    const upgrading = read("UPGRADING.md");
+
+    expect(publishing).toMatch(/npm publish/i);
+    expect(publishing).toContain("Trusted Publisher");
+    expect(versioning).toContain("MAJOR.MINOR.PATCH");
+    expect(versioning).toContain("Public API surface");
+    expect(checklist).toContain("Template (copy for vX.Y.Z)");
+    expect(checklist).toContain("npm run release:check -- --release");
+    expect(troubleshooting).toContain("Webhook signature troubleshooting");
+    expect(troubleshooting).toContain("Retry and duplicate event troubleshooting");
+    expect(troubleshooting).toContain("Release & npm publish");
+    expect(upgrading).toContain("How to upgrade");
+    expect(upgrading).toContain("Migration checklist");
+  });
+});
+
 describe("release automation / scripts present", () => {
   it("ships validation and release helper scripts", () => {
     expect(existsSync(join(root, "scripts/validate-package.mjs"))).toBe(true);
     expect(existsSync(join(root, "scripts/release-check.mjs"))).toBe(true);
     expect(existsSync(join(root, "scripts/extract-changelog.mjs"))).toBe(true);
     expect(existsSync(join(root, "PUBLISHING.md"))).toBe(true);
+    expect(existsSync(join(root, "VERSIONING.md"))).toBe(true);
+    expect(existsSync(join(root, "UPGRADING.md"))).toBe(true);
+    expect(existsSync(join(root, "TROUBLESHOOTING.md"))).toBe(true);
+    expect(existsSync(join(root, "RELEASE_CHECKLIST.md"))).toBe(true);
   });
 
   it("release:check passes for the current tree", () => {
