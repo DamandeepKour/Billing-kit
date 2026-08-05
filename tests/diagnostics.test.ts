@@ -6,6 +6,7 @@ import {
 import type { InvoiceRepository } from "../src/interfaces/InvoiceRepository";
 import type { Invoice } from "../src/types/invoice";
 import { InMemoryWebhookEventRepository } from "../src/repositories";
+import { InvalidConfigError } from "../src/utils/errors";
 
 const STRIPE_SECRET = "sk_test_diagnostics_secret_key_123456";
 const RAZORPAY_SECRET = "rzp_test_diagnostics_key_secret";
@@ -135,21 +136,28 @@ describe("diagnostics / verifyProviderConfig", () => {
 });
 
 describe("diagnostics / repositories", () => {
-  it("fails when a configured repository is missing required methods", () => {
+  it("rejects a configured repository missing required methods at startup", () => {
     const brokenInvoiceRepo = {
       save: async (invoice: Invoice) => invoice,
     } as InvoiceRepository;
 
-    const health = stripeBilling({
-      invoiceRepository: brokenInvoiceRepo,
-      webhookEventRepository: new InMemoryWebhookEventRepository(),
-    }).healthCheck();
-
-    expect(health.status).toBe("unhealthy");
-    expect(health.errors.some((e) => /findById/.test(e))).toBe(true);
     expect(
-      health.checks.find((c) => c.id === "repository.invoice")?.status,
-    ).toBe("fail");
+      () =>
+        stripeBilling({
+          invoiceRepository: brokenInvoiceRepo,
+          webhookEventRepository: new InMemoryWebhookEventRepository(),
+        }),
+    ).toThrow(
+      expect.objectContaining({
+        name: "InvalidConfigError",
+        code: "INVALID_CONFIG",
+        param: "invoiceRepository",
+        message: expect.stringContaining("findById"),
+      }),
+    );
+    expect(() => stripeBilling({ invoiceRepository: brokenInvoiceRepo })).toThrow(
+      InvalidConfigError,
+    );
   });
 
   it("passes when a custom webhook repository implements the contract", () => {

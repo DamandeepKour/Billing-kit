@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Cross-provider webhook integration flows (`tests/integration/webhook-flows.test.ts`): valid/invalid signatures, duplicates, payment/refund/subscription events, raw-body handling, normalized event output
 - Expanded unit tests for GST intra/inter-state, VAT/generic tax rules, multi-currency, invoice totals, refunds, subscriptions, invalid config, and zero/negative amount edge cases
 - npm publish readiness: `tsup` config, stricter package validation (exports smoke load), keywords/docs for `billing-kit` + `billing-kit/testing`
 - Webhook testing docs (`billing-kit/testing` fixtures, local signatures, `createSignedWebhookRequest`, curl helper)
 
 ### Changed
 
+- Startup validation now checks all custom repository interfaces and reports typed `InvalidConfigError` details; expanded valid/invalid initialization coverage for credentials, currency, tax, webhooks, and repositories
 - README rewritten for clearer overview, install/quick start, config, Stripe/Razorpay/tax/currency/refund/subscription/webhook/repository examples, API reference, and smallest-unit amount notes
 - Transfer/payout idempotency docs (fingerprint + response reuse, safe retries for `createTransfer` / `splitPayment`)
 - Entitlements docs (`hasFeature`, plan→feature mapping, subscription/webhook sync); `restoreFeatureAccess` helper

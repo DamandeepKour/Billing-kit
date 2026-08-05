@@ -311,6 +311,7 @@ export {
   validateRazorpayConfig,
   validateRazorpayKeyId,
   validateRazorpaySecretKey,
+  validateRepositoryConfig,
   validateRetryConfig,
   validateStripeConfig,
   validateStripeSecretKey,

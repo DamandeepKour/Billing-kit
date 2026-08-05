@@ -17,6 +17,28 @@ const BILLING_PROVIDERS = ["stripe", "razorpay"] as const satisfies readonly Bil
 const TAX_TYPES = ["gst", "vat", "sales_tax", "none"] as const;
 const STRIPE_SECRET_KEY_PATTERN = /^(sk|rk)_(test|live)/;
 
+const REPOSITORY_METHODS = {
+  invoiceRepository: ["save", "findById"],
+  transactionRepository: ["save", "findById", "list"],
+  retryAttemptRepository: ["save", "findById", "findByReference", "list"],
+  customerProfileRepository: ["save", "findById", "findByEmail", "list", "delete"],
+  auditLogRepository: ["save", "findById", "list"],
+  webhookEventRepository: ["claim", "save", "find", "list"],
+  usageEventRepository: ["save", "findById", "list"],
+  entitlementRepository: [
+    "savePlanFeatures",
+    "findPlanFeatures",
+    "saveEntitlement",
+    "findBySubscription",
+    "listByCustomer",
+    "listEntitlements",
+  ],
+  transferRequestRepository: ["claim", "save", "findByKey", "list"],
+  idempotencyRequestRepository: ["claim", "save", "findByKey", "list"],
+} as const satisfies Partial<
+  Record<keyof BillingKitConfig, readonly string[]>
+>;
+
 export type ValidatedBillingKitConfig = BillingKitConfig & {
   currency: SupportedCurrency;
 };
@@ -156,6 +178,12 @@ export function validateCurrencyConfig(
 }
 
 export function validateTaxConfig(tax: TaxConfig): TaxConfig {
+  if (tax === null || typeof tax !== "object" || Array.isArray(tax)) {
+    throw new InvalidConfigError("tax must be a configuration object", {
+      param: "tax",
+    });
+  }
+
   if (typeof tax.enabled !== "boolean") {
     throw new InvalidConfigError("tax.enabled must be a boolean", {
       param: "tax.enabled",
@@ -214,6 +242,42 @@ export function validateTaxConfig(tax: TaxConfig): TaxConfig {
   }
 
   return tax;
+}
+
+/**
+ * Validates any custom repository supplied at startup. Omitted repositories
+ * are valid and use BillingKit's in-memory defaults.
+ */
+export function validateRepositoryConfig(
+  config: BillingKitConfig,
+): void {
+  for (const [configKey, requiredMethods] of Object.entries(
+    REPOSITORY_METHODS,
+  )) {
+    const repository = config[configKey as keyof BillingKitConfig];
+    if (repository === undefined) continue;
+
+    if (
+      repository === null ||
+      (typeof repository !== "object" && typeof repository !== "function")
+    ) {
+      throw new InvalidConfigError(
+        `${configKey} must be a repository object`,
+        { param: configKey },
+      );
+    }
+
+    const record = repository as unknown as Record<string, unknown>;
+    const missing = requiredMethods.filter(
+      (method) => typeof record[method] !== "function",
+    );
+    if (missing.length > 0) {
+      throw new InvalidConfigError(
+        `${configKey} is missing required methods: ${missing.join(", ")}`,
+        { param: configKey },
+      );
+    }
+  }
 }
 
 export function validateCompanyConfig(company: CompanyDetails): CompanyDetails {
@@ -323,6 +387,8 @@ export function validateBillingKitConfig(
   if (config.retry !== undefined) {
     validateRetryConfig(config.retry);
   }
+
+  validateRepositoryConfig(config);
 
   return {
     ...config,

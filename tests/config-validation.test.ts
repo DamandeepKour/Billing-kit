@@ -6,6 +6,7 @@ import {
   validateCurrencyConfig,
   validateProvider,
   validateRazorpayConfig,
+  validateRepositoryConfig,
   validateStripeConfig,
   validateTaxConfig,
 } from "../src/utils/validate-config";
@@ -165,6 +166,54 @@ describe("config validation / helpers", () => {
         }),
       ).toThrow(/tax.taxType/);
     });
+
+    it("rejects a non-object tax config with a typed startup error", () => {
+      expect(() =>
+        validateTaxConfig(null as unknown as BillingKitConfig["tax"] & object),
+      ).toThrow(
+        expect.objectContaining({
+          name: "InvalidConfigError",
+          code: "INVALID_CONFIG",
+          param: "tax",
+        }),
+      );
+    });
+  });
+
+  describe("validateRepositoryConfig", () => {
+    it("allows omitted repositories so in-memory defaults can be used", () => {
+      expect(() => validateRepositoryConfig(validStripe())).not.toThrow();
+    });
+
+    it("accepts a custom repository with the required methods", () => {
+      expect(() =>
+        validateRepositoryConfig({
+          ...validStripe(),
+          invoiceRepository: {
+            save: jest.fn(),
+            findById: jest.fn(),
+          },
+        }),
+      ).not.toThrow();
+    });
+
+    it("rejects an incomplete custom repository with a typed error", () => {
+      expect(() =>
+        validateRepositoryConfig({
+          ...validStripe(),
+          invoiceRepository: {
+            save: jest.fn(),
+          } as never,
+        }),
+      ).toThrow(
+        expect.objectContaining({
+          name: "InvalidConfigError",
+          code: "INVALID_CONFIG",
+          param: "invoiceRepository",
+          message: expect.stringContaining("findById"),
+        }),
+      );
+    });
   });
 
   describe("validateBillingKitConfig", () => {
@@ -200,6 +249,21 @@ describe("config validation / BillingKit initialization", () => {
 
   it("initializes with valid Razorpay config", () => {
     expect(() => new BillingKit(validRazorpay())).not.toThrow();
+  });
+
+  it("initializes with valid webhook rotation and custom repository config", () => {
+    expect(
+      () =>
+        new BillingKit({
+          ...validStripe(),
+          webhookSecret: " whsec_current ",
+          webhookSecrets: [" whsec_previous ", "whsec_previous"],
+          invoiceRepository: {
+            save: jest.fn(),
+            findById: jest.fn(),
+          },
+        }),
+    ).not.toThrow();
   });
 
   it("initializes with tax and company details", () => {
@@ -281,6 +345,59 @@ describe("config validation / BillingKit initialization", () => {
           webhookSecret: "   ",
         }),
     ).toThrow(/webhookSecret/);
+  });
+
+  it("fails fast for invalid webhookSecrets config", () => {
+    expect(
+      () =>
+        new BillingKit({
+          ...validStripe(),
+          webhookSecret: "whsec_current",
+          webhookSecrets: ["whsec_previous", " "],
+        }),
+    ).toThrow(
+      expect.objectContaining({
+        name: "InvalidConfigError",
+        code: "INVALID_CONFIG",
+        param: "webhookSecrets[1]",
+      }),
+    );
+  });
+
+  it("fails fast for an incomplete custom repository", () => {
+    expect(
+      () =>
+        new BillingKit({
+          ...validStripe(),
+          webhookEventRepository: {
+            claim: jest.fn(),
+            save: jest.fn(),
+          } as never,
+        }),
+    ).toThrow(
+      expect.objectContaining({
+        name: "InvalidConfigError",
+        code: "INVALID_CONFIG",
+        param: "webhookEventRepository",
+        message: expect.stringContaining("find, list"),
+      }),
+    );
+  });
+
+  it("reports credential errors as typed startup errors", () => {
+    expect(
+      () =>
+        new BillingKit({
+          provider: "stripe",
+          secretKey: "pk_test_public",
+        }),
+    ).toThrow(
+      expect.objectContaining({
+        name: "InvalidConfigError",
+        code: "INVALID_CONFIG",
+        param: "secretKey",
+      }),
+    );
   });
 
   it("fails fast for invalid retry config", () => {
