@@ -614,6 +614,48 @@ Available repository config keys: `invoiceRepository`, `transactionRepository`, 
 
 ---
 
+## Provider diagnostics
+
+Use these helpers at startup or on a `/health` route. They validate **local config only** (no network calls to Stripe/Razorpay) and **never return raw secrets** — details may include a short masked `hint` (last 4 characters).
+
+```typescript
+import { BillingKit } from "billing-kit";
+
+const billing = new BillingKit({
+  provider: "stripe", // or "razorpay" + keyId
+  secretKey: process.env.STRIPE_SECRET_KEY!,
+  webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+  currency: "usd",
+  tax: { enabled: true, taxType: "sales_tax", defaultRate: 8 },
+});
+
+// Lightweight readiness: credentials, currency, webhook presence, repositories
+const health = billing.healthCheck();
+console.log(health.status, health.ok, health.errors, health.warnings);
+
+// Config shape: provider, tax, currency, webhook secret / rotation list
+const config = billing.verifyProviderConfig();
+console.log(config.valid, config.checks.map((c) => [c.id, c.status]));
+
+// Full report: health + config + provider-specific recommendations
+const report = billing.runDiagnostics();
+console.log(report.status);
+console.log(report.recommendations.slice(0, 5));
+```
+
+| Method | Use when |
+|--------|----------|
+| `healthCheck()` | Process readiness / k8s probes |
+| `verifyProviderConfig()` | Deploy-time config review |
+| `runDiagnostics()` | Support dumps / onboarding |
+
+Structured fields on every result: `status` (`healthy` \| `degraded` \| `unhealthy`), `checks[]`, `errors`, `warnings`, `recommendations`, `checkedAt`.  
+Stripe checks secret-key prefix (`sk_`/`rk_` + test/live). Razorpay checks `keyId` (`rzp_…`) and `secretKey`. Webhook setup warns if `webhookSecret` is missing and validates `webhookSecrets` for rotation.
+
+Express example: `GET /health` → `billing.healthCheck()` in [examples/express](./examples/express/).
+
+---
+
 ## API reference
 
 ### Invoices
@@ -681,6 +723,16 @@ Available repository config keys: `invoiceRepository`, `transactionRepository`, 
 
 Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookRequest()`, `EXPRESS_WEBHOOK_RAW_BODY`.
 
+### Diagnostics
+
+| Method | Description |
+|--------|-------------|
+| `healthCheck()` | Credentials, currency, webhook presence, repositories → `HealthCheckResult` |
+| `verifyProviderConfig()` | Provider/tax/currency/webhook shape → `ProviderConfigVerification` |
+| `runDiagnostics()` | Combined report + recommendations → `DiagnosticsReport` |
+
+No network calls; secrets are never returned (masked `hint` only). See [Provider diagnostics](#provider-diagnostics).
+
 ### Other surfaces
 
 | Area | Methods |
@@ -691,7 +743,7 @@ Helpers: `createRawBodyMiddleware()`, `ensureRawWebhookBody()`, `parseWebhookReq
 | Usage billing | `recordUsageEvent`, `aggregateUsage`, `generateUsageInvoice` |
 | Route / payouts | `splitPayment`, `createTransfer`, `reverseTransfer`, `getSettlementDetails` |
 | Audit | `recordBillingEvent`, `getInvoiceTimeline`, `getPaymentAuditLog` |
-| Diagnostics | `healthCheck`, `verifyProviderConfig`, `runDiagnostics` |
+| Diagnostics | `healthCheck`, `verifyProviderConfig`, `runDiagnostics` (see [Provider diagnostics](#provider-diagnostics)) |
 | Disputes | `fetchDispute`, `listDisputes`, `acceptDispute`, `contestDispute` |
 
 ---

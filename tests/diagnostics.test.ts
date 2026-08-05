@@ -239,6 +239,80 @@ describe("diagnostics / runDiagnostics", () => {
   });
 });
 
+describe("diagnostics / credential failures", () => {
+  it("fails Stripe credentials when secretKey prefix is invalid", () => {
+    const service = new DiagnosticsService({
+      provider: "stripe",
+      // Bypass BillingKit ctor validation to exercise diagnostic checks
+      secretKey: "not_a_stripe_key",
+      webhookSecret: WEBHOOK_SECRET,
+      currency: "usd",
+    });
+
+    const health = service.healthCheck();
+    expect(health.status).toBe("unhealthy");
+    expect(health.ok).toBe(false);
+    expect(health.errors.some((e) => /secretKey|Stripe/i.test(e))).toBe(true);
+    expect(
+      health.checks.find((c) => c.id === "credentials.stripe.secretKey")?.status,
+    ).toBe("fail");
+  });
+
+  it("fails Razorpay credentials when keyId is malformed", () => {
+    const service = new DiagnosticsService({
+      provider: "razorpay",
+      keyId: "bad_key",
+      secretKey: RAZORPAY_SECRET,
+      webhookSecret: WEBHOOK_SECRET,
+      currency: "inr",
+    });
+
+    const result = service.verifyProviderConfig();
+    expect(result.valid).toBe(false);
+    expect(result.status).toBe("unhealthy");
+    expect(
+      result.checks.find((c) => c.id === "credentials.razorpay.keyId")?.status,
+    ).toBe("fail");
+  });
+});
+
+describe("diagnostics / structured output", () => {
+  it("exposes status, errors, warnings, and recommendations without secrets", () => {
+    const report = stripeBilling({
+      webhookSecret: undefined,
+      webhookEventRepository: new InMemoryWebhookEventRepository(),
+    }).runDiagnostics();
+
+    expect(report).toMatchObject({
+      status: "degraded",
+      provider: "stripe",
+      ok: false,
+      checkedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(Array.isArray(report.errors)).toBe(true);
+    expect(report.warnings.length).toBeGreaterThan(0);
+    expect(report.recommendations.length).toBeGreaterThan(0);
+    expect(report.health.checks.length).toBeGreaterThan(0);
+    expect(report.config.checks.length).toBeGreaterThan(0);
+
+    const blob = serialize(report);
+    expect(blob).not.toContain(STRIPE_SECRET);
+    expect(blob).not.toContain(WEBHOOK_SECRET);
+  });
+
+  it("recommends live webhook secrets when Stripe live keys are used", () => {
+    const service = new DiagnosticsService({
+      provider: "stripe",
+      secretKey: "sk_live_diagnostics_secret_key_123456",
+      webhookSecret: WEBHOOK_SECRET,
+      currency: "usd",
+    });
+
+    const joined = service.runDiagnostics().recommendations.join("\n");
+    expect(joined).toMatch(/Live Stripe key/i);
+  });
+});
+
 describe("diagnostics / helpers", () => {
   it("exposes provider recommendation helpers", () => {
     expect(providerRecommendations("razorpay").length).toBeGreaterThan(3);
