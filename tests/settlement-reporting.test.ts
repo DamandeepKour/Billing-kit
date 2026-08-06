@@ -3,10 +3,7 @@ import { InMemoryTransactionRepository } from "../src/repositories";
 import { TransactionService } from "../src/transaction";
 import { TransactionType } from "../src/types/transaction";
 import { TransactionNotFoundError } from "../src/utils/errors";
-import {
-  calculateFeeBreakdown,
-  normalizeSettlementFields,
-} from "../src/utils/settlement";
+import { calculateFeeBreakdown, normalizeSettlementFields,} from "../src/utils/settlement";
 
 describe("Fee / net settlement calculations", () => {
   it("calculates net = gross - fee - taxOnFee", () => {
