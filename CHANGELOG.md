@@ -8,7 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-
 - README provider diagnostics examples (`healthCheck` / `verifyProviderConfig` / `runDiagnostics`); expanded credential-failure and structured-output diagnostics tests
 - Release documentation set: publish guide, versioning policy, reusable release checklist, expanded troubleshooting (signatures, retries/duplicates, publish), and upgrade/migration notes (`PUBLISHING.md`, `VERSIONING.md`, `RELEASE_CHECKLIST.md`, `TROUBLESHOOTING.md`, `UPGRADING.md`)
 - Release automation hardening: `release:check` / `release:notes` scripts, CI pack artifact upload, publish workflow GitHub Release from CHANGELOG, and `tests/release-automation.test.ts`
