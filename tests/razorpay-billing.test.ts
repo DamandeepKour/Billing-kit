@@ -54,7 +54,6 @@ describe("Razorpay orders and fetch helpers", () => {
       receipt: "rcpt_1",
       notes: { sku: "pro" },
     });
-
     const order = await razorpayBilling().createOrder({
       amount: 99900,
       receipt: "rcpt_1",
