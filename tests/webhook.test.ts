@@ -19,7 +19,6 @@ function gateway(): RazorpayGateway {
 function sign(body: string | Buffer): string {
   return generateRazorpayWebhookSignature(body, secret);
 }
-
 describe("Razorpay webhook signature verification", () => {
   it("verifies valid signature from a string raw body", () => {
     const body = JSON.stringify({
