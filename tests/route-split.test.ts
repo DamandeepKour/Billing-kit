@@ -20,6 +20,7 @@ jest.mock("razorpay", () => {
       refund: jest.fn(),
       transfer: paymentsTransfer,
     },
+    
     refunds: { fetch: jest.fn() },
     transfers: {
       create: transfersCreate,
