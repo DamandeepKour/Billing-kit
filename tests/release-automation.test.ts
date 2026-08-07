@@ -78,6 +78,7 @@ describe("release automation / workflows", () => {
   it("CI runs lint, typecheck, test, build, release check, and pack validation", () => {
     const ci = read(".github/workflows/ci.yml");
 
+    console.log(ci);
     expect(ci).toContain("npm run lint");
     expect(ci).toContain("npm run typecheck");
     expect(ci).toContain("npm test");
