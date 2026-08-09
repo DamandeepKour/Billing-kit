@@ -37,4 +37,5 @@ const txn = await billing.recordTransaction({
   currency: "inr",
   referenceId: invoice.id,
 });
+console.log(txn);
 console.log("Transaction:", txn.id);
