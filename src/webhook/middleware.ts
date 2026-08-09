@@ -53,7 +53,6 @@ export function createRawBodyMiddleware(
       settled = true;
       next(error);
     };
-
     req.on("data", (chunk: Buffer | string) => {
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       size += buf.length;
