@@ -13,6 +13,7 @@ import { BillingKitError } from "../utils/errors";
 import { generateId } from "../utils/id";
 import { assertSupportedCurrency } from "../utils/currency";
 
+
 export class CustomerProfileNotFoundError extends BillingKitError {
   constructor(id: string) {
     super(`Customer profile not found: ${id}`, "CUSTOMER_PROFILE_NOT_FOUND");
