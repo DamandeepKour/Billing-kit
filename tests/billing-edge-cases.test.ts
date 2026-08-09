@@ -47,7 +47,6 @@ describe("edge cases / GST intra-state vs inter-state", () => {
         sellerState: seller,
         buyerState: buyer,
       });
-
       expect(result.cgst).toBe(cgst);
       expect(result.sgst).toBe(sgst);
       expect(result.igst).toBe(igst);
