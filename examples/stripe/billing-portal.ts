@@ -27,7 +27,7 @@ async function run(): Promise<void> {
     customerId,
     returnUrl: "https://app.example.com/account/billing",
   });
-  console.log("Update payment method:", updatePm.url);
+  // console.log("Update payment method:", updatePm.url);
 
   const subscriptions = await billing.listActiveSubscriptions(customerId);
   console.log(
