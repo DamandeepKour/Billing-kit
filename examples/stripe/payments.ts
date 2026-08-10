@@ -11,7 +11,7 @@ async function run(): Promise<void> {
     description: "Pro plan",
     metadata: { orderId: "order_1001" },
   });
-  console.log("created:", payment.id, payment.status);
+  // console.log("created:", payment.id, payment.status);
   if (payment.status === "authorized" || payment.status === "pending") {
     const captured = await billing.capturePayment({
       paymentId: payment.id,
