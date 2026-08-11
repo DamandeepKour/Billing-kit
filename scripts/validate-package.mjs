@@ -98,16 +98,15 @@ function validatePackageJson(pkg) {
     }
   }
 
-  if (!pkg.exports?.["."]?.types || !pkg.exports?.["."]?.import || !pkg.exports?.["."]?.require) {
-    fail('exports["."] must define types, import, and require');
-  }
-
-  if (
-    !pkg.exports?.["./testing"]?.types ||
-    !pkg.exports?.["./testing"]?.import ||
-    !pkg.exports?.["./testing"]?.require
-  ) {
-    fail('exports["./testing"] must define types, import, and require');
+  for (const entryPoint of [".", "./testing"]) {
+    const entry = pkg.exports?.[entryPoint];
+    const importTypes = entry?.import?.types;
+    const requireTypes = entry?.require?.types;
+    if (!importTypes || !entry?.import?.default || !requireTypes || !entry?.require?.default) {
+      fail(
+        `exports["${entryPoint}"] must define import.types/import.default and require.types/require.default (so ESM and CJS consumers each resolve their own .d.mts/.d.ts)`,
+      );
+    }
   }
 
   if (!Array.isArray(pkg.keywords) || pkg.keywords.length < 5) {
@@ -132,12 +131,14 @@ function validateEntrypoints(pkg) {
     pkg.main,
     pkg.module,
     pkg.types,
-    pkg.exports["."].require,
-    pkg.exports["."].import,
-    pkg.exports["."].types,
-    pkg.exports["./testing"].require,
-    pkg.exports["./testing"].import,
-    pkg.exports["./testing"].types,
+    pkg.exports["."].require.default,
+    pkg.exports["."].require.types,
+    pkg.exports["."].import.default,
+    pkg.exports["."].import.types,
+    pkg.exports["./testing"].require.default,
+    pkg.exports["./testing"].require.types,
+    pkg.exports["./testing"].import.default,
+    pkg.exports["./testing"].import.types,
   ]
     .filter(Boolean)
     .map(stripLeadingDot);
@@ -246,9 +247,10 @@ function validateTarballContents(pkg) {
       stripLeadingDot(pkg.main),
       stripLeadingDot(pkg.module),
       stripLeadingDot(pkg.types),
-      stripLeadingDot(pkg.exports["./testing"].require),
-      stripLeadingDot(pkg.exports["./testing"].import),
-      stripLeadingDot(pkg.exports["./testing"].types),
+      stripLeadingDot(pkg.exports["./testing"].require.default),
+      stripLeadingDot(pkg.exports["./testing"].require.types),
+      stripLeadingDot(pkg.exports["./testing"].import.default),
+      stripLeadingDot(pkg.exports["./testing"].import.types),
     ];
 
     for (const entry of requiredInTarball) {
