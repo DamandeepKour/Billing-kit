@@ -10,7 +10,6 @@ import { generateId } from "../utils/id";
 import { summarizePayload } from "../utils/mask";
 
 const DEFAULT_ACTOR: AuditActor = { type: "system", name: "billing-kit" };
-
 export class AuditLogService {
   private sequence = 0;
 
