@@ -47,7 +47,6 @@ function isSemVer(version) {
 }
 
 function main() {
-  console.log("Hello, world!");
   console.log("Running release safety checks…");
 
   mustExist("package.json");

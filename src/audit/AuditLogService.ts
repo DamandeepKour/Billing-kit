@@ -12,7 +12,6 @@ import { summarizePayload } from "../utils/mask";
 const DEFAULT_ACTOR: AuditActor = { type: "system", name: "billing-kit" };
 
 export class AuditLogService {
-  private readonly logger = new Logger("AuditLogService");
   private sequence = 0;
 
   constructor(
