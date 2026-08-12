@@ -33,6 +33,8 @@ npm install billing-kit@X.Y.Z
 
 Minor and patch releases on `1.x` must remain usable without code changes unless marked **Breaking** in the CHANGELOG / this file.
 
+For the full Node version support matrix and Stripe vs Razorpay feature parity (including what's Partial/Planned/N/A per provider), see **[docs/compatibility.md](./docs/compatibility.md)**.
+
 ---
 
 ## From pre-release / local builds → 1.0.0

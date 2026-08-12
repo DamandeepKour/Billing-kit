@@ -10,7 +10,7 @@ Requires **Node.js 18+**. Ships CommonJS + ESM builds and full TypeScript types 
 
 **Important:** every monetary amount is an **integer in the smallest currency unit** (paise, cents, …), never a decimal major unit. See [Amounts (smallest currency units)](#amounts-smallest-currency-units).
 
-Related docs: [CHANGELOG.md](./CHANGELOG.md) · [UPGRADING.md](./UPGRADING.md) · [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) · [PUBLISHING.md](./PUBLISHING.md) · [VERSIONING.md](./VERSIONING.md) · [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) · [examples/](./examples/) (Express, Next.js, NestJS)
+Related docs: [CHANGELOG.md](./CHANGELOG.md) · [UPGRADING.md](./UPGRADING.md) · [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) · [PUBLISHING.md](./PUBLISHING.md) · [VERSIONING.md](./VERSIONING.md) · [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) · [docs/compatibility.md](./docs/compatibility.md) · [examples/](./examples/) (Express, Next.js, NestJS)
 
 ---
 
@@ -18,6 +18,7 @@ Related docs: [CHANGELOG.md](./CHANGELOG.md) · [UPGRADING.md](./UPGRADING.md) �
 
 - [Overview](#overview)
 - [Install](#install)
+- [Compatibility](#compatibility)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Stripe example](#stripe-example)
@@ -79,6 +80,24 @@ Test-only helpers (mock webhook fixtures, signed request builders) live on a sep
 ```typescript
 import { createMockStripeEvent } from "billing-kit/testing";
 ```
+
+---
+
+## Compatibility
+
+Requires **Node.js 18+** (`engines.node: ">=18"`); CI tests Node 18.x, 20.x, and 22.x with identical behavior across all three.
+
+Most of `billing-kit` — invoices, tax, coupons, entitlements, usage billing, audit logs, retry/dunning, and webhook processing — is fully provider-agnostic. A handful of surfaces differ because Stripe and Razorpay offer genuinely different capabilities:
+
+| Feature | Stripe | Razorpay |
+|---|---|---|
+| Checkout model | PaymentIntents (`createPayment`) | Orders + signature (`createOrder`, `verifyPaymentSignature`) |
+| Customer Portal | ✅ | ⛔ N/A |
+| Metered usage → provider | ✅ (`reportUsage`) | ⛔ N/A (use `billing-kit`'s own usage ledger instead — works on both) |
+| Dispute response | Evidence (`updateDisputeEvidence`) | Accept/contest (`acceptDispute`, `contestDispute`) |
+| Split payouts (Route) | 🔜 Planned | ✅ |
+
+Calling a provider-specific method against the other provider throws a typed `UnsupportedOperationError` — it never silently no-ops. See **[docs/compatibility.md](./docs/compatibility.md)** for the full Node version matrix, the complete feature table, and provider limitation notes.
 
 ---
 

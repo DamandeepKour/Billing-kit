@@ -2,7 +2,7 @@
 
 `billing-kit` follows [Semantic Versioning](https://semver.org/): **MAJOR.MINOR.PATCH**.
 
-See also: [PUBLISHING.md](./PUBLISHING.md) · [CHANGELOG.md](./CHANGELOG.md) · [UPGRADING.md](./UPGRADING.md)
+See also: [PUBLISHING.md](./PUBLISHING.md) · [CHANGELOG.md](./CHANGELOG.md) · [UPGRADING.md](./UPGRADING.md) · [docs/compatibility.md](./docs/compatibility.md) (Node version matrix + Stripe/Razorpay feature parity)
 
 ---
 
@@ -43,6 +43,8 @@ Treat these as covered by SemVer:
 - **Amounts**: public APIs use **smallest currency units** (paise / cents). Changing that convention is a **major** change.
 - **Providers**: supported providers are Stripe and Razorpay. Dropping a provider is a **major** change.
 - **Webhooks**: adding new `normalizedType` values is a **minor** change; renaming or removing existing ones is a **major** change.
+
+For the current Node version matrix and the exact Stripe vs Razorpay feature parity these promises apply to, see **[docs/compatibility.md](./docs/compatibility.md)**.
 
 ---
 
