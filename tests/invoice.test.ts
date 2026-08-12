@@ -1,8 +1,16 @@
+import { InvoiceService } from "../src/invoice";
+import { CustomerProfileService } from "../src/customer";
+import {
+  InMemoryCustomerProfileRepository,
+  InMemoryInvoiceRepository,
+} from "../src/repositories";
+import { InvoiceNotFoundError } from "../src/utils/errors";
 import {
   baseInvoiceInput,
   createInvoiceService,
   delhiAddress,
   gstConfig,
+  indiaAddress,
 } from "./helpers";
 
 describe("invoice / totals", () => {
@@ -186,5 +194,79 @@ describe("invoice / edge cases", () => {
 
     expect(invoice.number).toBe("INV-2026-MH-00042");
     expect(invoice.customer.gstin).toBe("27AAAAA0000A1Z5");
+  });
+});
+
+describe("invoice / not-found and missing-input errors", () => {
+  it("throws InvoiceNotFoundError from getInvoiceSummary for an unknown id", async () => {
+    await expect(
+      createInvoiceService().getInvoiceSummary("inv_missing"),
+    ).rejects.toThrow(InvoiceNotFoundError);
+  });
+
+  it("throws InvoiceNotFoundError from updateInvoiceStatus for an unknown id", async () => {
+    await expect(
+      createInvoiceService().updateInvoiceStatus("inv_missing", "paid"),
+    ).rejects.toThrow(InvoiceNotFoundError);
+  });
+
+  it("returns null from getInvoice for an unknown id (no throw)", async () => {
+    await expect(
+      createInvoiceService().getInvoice("inv_missing"),
+    ).resolves.toBeNull();
+  });
+
+  it("requires customer and billingAddress when customerProfileId is omitted", async () => {
+    await expect(
+      createInvoiceService().generateInvoice({
+        lineItems: [{ description: "Plan", quantity: 1, unitAmount: 100 }],
+      } as never),
+    ).rejects.toMatchObject({
+      name: "BillingKitError",
+      code: "INVALID_INVOICE_INPUT",
+    });
+  });
+
+  it("throws a typed error when customerProfileId is given but no CustomerProfileService is configured", async () => {
+    const service = new InvoiceService(
+      gstConfig(),
+      new InMemoryInvoiceRepository(),
+    ); // no CustomerProfileService passed
+
+    await expect(
+      service.generateInvoice({
+        customerProfileId: "prof_1",
+        lineItems: [{ description: "Plan", quantity: 1, unitAmount: 100 }],
+      }),
+    ).rejects.toMatchObject({
+      name: "BillingKitError",
+      code: "CUSTOMER_PROFILE_UNAVAILABLE",
+    });
+  });
+
+  it("resolves customer and billing address from a customer profile when configured", async () => {
+    const customerProfileService = new CustomerProfileService(
+      new InMemoryCustomerProfileRepository(),
+    );
+    const profile = await customerProfileService.createCustomerProfile({
+      name: "Profile Buyer",
+      email: "buyer@example.com",
+      billingAddress: indiaAddress,
+    });
+
+    const service = new InvoiceService(
+      gstConfig(),
+      new InMemoryInvoiceRepository(),
+      undefined,
+      customerProfileService,
+    );
+
+    const invoice = await service.generateInvoice({
+      customerProfileId: profile.id,
+      lineItems: [{ description: "Plan", quantity: 1, unitAmount: 10000 }],
+    });
+
+    expect(invoice.customer.email).toBe("buyer@example.com");
+    expect(invoice.billingAddress).toEqual(indiaAddress);
   });
 });

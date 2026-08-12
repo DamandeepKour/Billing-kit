@@ -262,6 +262,44 @@ describe("currency / helpers", () => {
     ).toBe(120);
   });
 
+  it("rejects a non-positive or non-finite FX rate", () => {
+    expect(() =>
+      convertAmount({ amount: 1000, from: "usd", to: "eur", rate: 0 }),
+    ).toThrow(BillingValidationError);
+    expect(() =>
+      convertAmount({ amount: 1000, from: "usd", to: "eur", rate: -0.5 }),
+    ).toThrow(BillingValidationError);
+    expect(() =>
+      convertAmount({
+        amount: 1000,
+        from: "usd",
+        to: "eur",
+        rate: Number.NaN,
+      }),
+    ).toThrow(BillingValidationError);
+    expect(() =>
+      convertAmount({
+        amount: 1000,
+        from: "usd",
+        to: "eur",
+        rate: Number.POSITIVE_INFINITY,
+      }),
+    ).toThrow(BillingValidationError);
+  });
+
+  it("converts a major-unit amount when amountInMinorUnits is false", () => {
+    // 49 USD major units (not 4900 minor units) at parity → 49 EUR major → 4900 cents
+    expect(
+      convertAmount({
+        amount: 49,
+        from: "usd",
+        to: "eur",
+        rate: 1,
+        amountInMinorUnits: false,
+      }),
+    ).toBe(4900);
+  });
+
   it("rounds fractional minor units", () => {
     expect(roundAmount(10.4)).toBe(10);
     expect(roundAmount(10.5)).toBe(11);
@@ -323,5 +361,23 @@ describe("currency / helpers", () => {
     expect(assertSmallestUnitAmount(100, { currency: "usd" })).toBe(100);
     expect(() => assertSmallestUnitAmount(-1)).toThrow(BillingValidationError);
     expect(() => assertSmallestUnitAmount(1.5)).toThrow(BillingValidationError);
+    expect(() => assertSmallestUnitAmount(Number.POSITIVE_INFINITY)).toThrow(
+      BillingValidationError,
+    );
+  });
+
+  it("assertLineItemCurrencies rejects an unsupported line-item currency", () => {
+    expect(() =>
+      assertLineItemCurrencies([{ currency: "jpy" }], "usd"),
+    ).toThrow(UnsupportedCurrencyError);
+  });
+
+  it("assertLineItemCurrencies passes when every declared currency matches the invoice currency", () => {
+    expect(() =>
+      assertLineItemCurrencies(
+        [{ currency: "usd" }, { description: "no currency declared" }, { currency: "usd" }],
+        "usd",
+      ),
+    ).not.toThrow();
   });
 });

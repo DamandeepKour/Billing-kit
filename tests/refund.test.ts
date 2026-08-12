@@ -1,4 +1,5 @@
 import { RefundService } from "../src/refund";
+import { InMemoryIdempotencyRequestRepository } from "../src/repositories";
 import { BillingValidationError } from "../src/utils/errors";
 import { createMockGateway } from "./helpers";
 
@@ -153,5 +154,31 @@ describe("refund / errors and edge cases", () => {
       amount: 1000,
       idempotencyKey: "idem_123",
     });
+  });
+
+  it("dedupes a retried zero-amount refund through a durable idempotency repository", async () => {
+    const refundPayment = jest.fn().mockResolvedValue({
+      id: "re_zero_idem",
+      paymentId: "pay_1",
+      amount: 0,
+      status: "succeeded",
+      provider: "mock",
+    });
+    const refunds = new RefundService(
+      createMockGateway({ refundPayment }),
+      new InMemoryIdempotencyRequestRepository(),
+    );
+    const input = {
+      paymentId: "pay_1",
+      amount: 0,
+      idempotencyKey: "refund_zero_001",
+    };
+
+    const first = await refunds.refundPayment(input);
+    const retried = await refunds.refundPayment(input);
+
+    expect(refundPayment).toHaveBeenCalledTimes(1);
+    expect(retried).toEqual(first);
+    expect(first.amount).toBe(0);
   });
 });

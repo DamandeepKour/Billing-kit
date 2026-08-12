@@ -2,6 +2,11 @@ import {
   calculateGST,
   calculateVAT,
   calculateSalesTax,
+  calculateLineItemTaxes,
+  detectTaxType,
+  defaultRateFor,
+  isEuCountry,
+  normalizeRegionCode,
   TaxEngine,
   TaxService,
 } from "../src/tax";
@@ -250,6 +255,26 @@ describe("tax / VAT", () => {
       /amount must be a non-negative/,
     );
   });
+
+  it("resolves the default EU rate for a country when no rate is given", () => {
+    // Listed country falls back to defaultRateFor("vat", country) inside
+    // calculateVAT itself (not pre-resolved by the caller).
+    const listed = calculateVAT({ amount: 10000, country: "FR" });
+    expect(listed.taxPercent).toBe(20);
+    expect(listed.vat).toBe(2000);
+
+    // Unlisted EU-ish country falls back to EU_VAT_RATES.default (20%).
+    const unlisted = calculateVAT({ amount: 10000, country: "PT" });
+    expect(unlisted.taxPercent).toBe(20);
+    expect(unlisted.vat).toBe(2000);
+  });
+
+  it("defaults rate to 0 when both rate and country are omitted", () => {
+    const result = calculateVAT({ amount: 10000 });
+    expect(result.taxPercent).toBe(0);
+    expect(result.vat).toBe(0);
+    expect(result.total).toBe(10000);
+  });
 });
 
 describe("tax / sales tax (generic US)", () => {
@@ -389,6 +414,108 @@ describe("tax / TaxEngine", () => {
         engine.calculate({ amount: -1, autoTax: true, country: "DE" }),
       ).toThrow(/amount must be a non-negative/);
     });
+
+    it("returns no tax when autoTax is true but no country is given", () => {
+      const result = engine.calculate({ amount: 10000, autoTax: true });
+
+      expect(result.taxType).toBe("none");
+      expect(result.totalTax).toBe(0);
+      expect(result.total).toBe(10000);
+    });
+  });
+});
+
+describe("tax / region helpers", () => {
+  describe("isEuCountry", () => {
+    it("recognizes EU member codes case-insensitively", () => {
+      expect(isEuCountry("DE")).toBe(true);
+      expect(isEuCountry("fr")).toBe(true);
+    });
+
+    it("returns false for non-EU or missing country codes", () => {
+      expect(isEuCountry("US")).toBe(false);
+      expect(isEuCountry("IN")).toBe(false);
+      expect(isEuCountry(undefined)).toBe(false);
+      expect(isEuCountry("")).toBe(false);
+    });
+  });
+
+  describe("normalizeRegionCode", () => {
+    it("trims and upper-cases region codes", () => {
+      expect(normalizeRegionCode(" mh ")).toBe("MH");
+      expect(normalizeRegionCode(undefined)).toBe("");
+    });
+  });
+
+  describe("detectTaxType", () => {
+    it("prefers an explicit taxType over country detection", () => {
+      expect(detectTaxType("US", "gst")).toBe("gst");
+    });
+
+    it("ignores an explicit taxType of 'none' and detects from country", () => {
+      expect(detectTaxType("IN", "none")).toBe("gst");
+    });
+
+    it("maps India to gst, the US to sales_tax, and EU countries to vat", () => {
+      expect(detectTaxType("IN")).toBe("gst");
+      expect(detectTaxType("US")).toBe("sales_tax");
+      expect(detectTaxType("DE")).toBe("vat");
+    });
+
+    it("defaults unlisted countries to vat", () => {
+      expect(detectTaxType("AU")).toBe("vat");
+    });
+
+    it("returns 'none' when there is no country and no explicit type", () => {
+      expect(detectTaxType(undefined, undefined)).toBe("none");
+      expect(detectTaxType("", undefined)).toBe("none");
+    });
+  });
+
+  describe("defaultRateFor", () => {
+    it("returns the flat 18% GST rate regardless of region", () => {
+      expect(defaultRateFor("gst")).toBe(18);
+      expect(defaultRateFor("gst", "IN", "MH")).toBe(18);
+    });
+
+    it("looks up US sales tax by state, defaulting unknown states to 0", () => {
+      expect(defaultRateFor("sales_tax", "US", "CA")).toBe(7.25);
+      expect(defaultRateFor("sales_tax", "US", "ZZ")).toBe(0);
+    });
+
+    it("looks up EU VAT by country, falling back to the EU default", () => {
+      expect(defaultRateFor("vat", "FR")).toBe(20);
+      expect(defaultRateFor("vat", "PT")).toBe(20); // unlisted → EU_VAT_RATES.default
+    });
+
+    it("returns 0 for taxType 'none'", () => {
+      expect(defaultRateFor("none")).toBe(0);
+    });
+  });
+});
+
+describe("tax / calculateLineItemTaxes", () => {
+  it("returns an empty, zeroed summary for an empty line item list", () => {
+    const { lines, summary } = calculateLineItemTaxes({
+      lineItems: [],
+      base: { taxType: "gst", sellerState: "MH", buyerState: "MH", country: "IN" },
+    });
+
+    expect(lines).toEqual([]);
+    expect(summary).toMatchObject({
+      taxType: "gst",
+      taxableAmount: 0,
+      totalTax: 0,
+      total: 0,
+      taxLines: [],
+    });
+  });
+
+  it("falls back to 'none' when the empty list has no base taxType either", () => {
+    const { summary } = calculateLineItemTaxes({ lineItems: [], base: {} });
+
+    expect(summary.taxType).toBe("none");
+    expect(summary.total).toBe(0);
   });
 });
 

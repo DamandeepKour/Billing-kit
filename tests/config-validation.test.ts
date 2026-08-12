@@ -7,8 +7,10 @@ import {
   validateProvider,
   validateRazorpayConfig,
   validateRepositoryConfig,
+  validateRetryConfig,
   validateStripeConfig,
   validateTaxConfig,
+  validateWebhookSecrets,
 } from "../src/utils/validate-config";
 
 const validStripe = (): BillingKitConfig => ({
@@ -178,6 +180,28 @@ describe("config validation / helpers", () => {
         }),
       );
     });
+
+    it("rejects a non-boolean tax.enabled", () => {
+      expect(() =>
+        validateTaxConfig({ enabled: "yes" as unknown as boolean }),
+      ).toThrow(/tax.enabled/);
+    });
+
+    it("rejects a non-boolean tax.autoTax", () => {
+      expect(() =>
+        validateTaxConfig({
+          enabled: true,
+          taxType: "vat",
+          autoTax: "true" as unknown as boolean,
+        }),
+      ).toThrow(/tax.autoTax/);
+    });
+
+    it("rejects an empty tax.sellerCountry when provided", () => {
+      expect(() =>
+        validateTaxConfig({ enabled: true, taxType: "vat", sellerCountry: "  " }),
+      ).toThrow(/tax.sellerCountry/);
+    });
   });
 
   describe("validateRepositoryConfig", () => {
@@ -214,6 +238,77 @@ describe("config validation / helpers", () => {
         }),
       );
     });
+
+    it("rejects a repository value that is not an object, with a distinct message", () => {
+      expect(() =>
+        validateRepositoryConfig({
+          ...validStripe(),
+          invoiceRepository: "not-a-repository" as never,
+        }),
+      ).toThrow(
+        expect.objectContaining({
+          name: "InvalidConfigError",
+          code: "INVALID_CONFIG",
+          param: "invoiceRepository",
+          message: expect.stringContaining("must be a repository object"),
+        }),
+      );
+    });
+
+    it("rejects a null repository value", () => {
+      expect(() =>
+        validateRepositoryConfig({
+          ...validStripe(),
+          invoiceRepository: null as never,
+        }),
+      ).toThrow(/must be a repository object/);
+    });
+  });
+
+  describe("validateWebhookSecrets", () => {
+    it("allows omitted secrets", () => {
+      expect(validateWebhookSecrets(undefined)).toBeUndefined();
+    });
+
+    it("rejects a non-array value", () => {
+      expect(() => validateWebhookSecrets("whsec_a" as never)).toThrow(
+        expect.objectContaining({
+          name: "InvalidConfigError",
+          param: "webhookSecrets",
+        }),
+      );
+    });
+
+    it("de-duplicates repeated secrets while preserving order", () => {
+      expect(validateWebhookSecrets(["a", "b", "a"])).toEqual(["a", "b"]);
+    });
+  });
+
+  describe("validateRetryConfig", () => {
+    it("accepts a fully specified valid retry policy", () => {
+      expect(() =>
+        validateRetryConfig({
+          maxRetries: 3,
+          retryIntervalsMs: [1000, 2000, 3000],
+          gracePeriodMs: 0,
+        }),
+      ).not.toThrow();
+    });
+
+    it("rejects a non-array retryIntervalsMs", () => {
+      expect(() =>
+        validateRetryConfig({ retryIntervalsMs: 1000 as unknown as number[] }),
+      ).toThrow(/retry.retryIntervalsMs/);
+    });
+
+    it("rejects retryIntervalsMs containing a negative or non-finite entry", () => {
+      expect(() =>
+        validateRetryConfig({ retryIntervalsMs: [1000, -1] }),
+      ).toThrow(/retry.retryIntervalsMs/);
+      expect(() =>
+        validateRetryConfig({ retryIntervalsMs: [Number.NaN] }),
+      ).toThrow(/retry.retryIntervalsMs/);
+    });
   });
 
   describe("validateBillingKitConfig", () => {
@@ -238,6 +333,15 @@ describe("config validation / helpers", () => {
       expect(validated.keyId).toBe("rzp_live_1");
       expect(validated.secretKey).toBe("secret");
       expect(validated.currency).toBe("inr");
+    });
+
+    it("rejects a null or non-object config before touching any field", () => {
+      expect(() => validateBillingKitConfig(null as never)).toThrow(
+        expect.objectContaining({ name: "InvalidConfigError", param: "config" }),
+      );
+      expect(() => validateBillingKitConfig(42 as never)).toThrow(
+        expect.objectContaining({ name: "InvalidConfigError", param: "config" }),
+      );
     });
   });
 });

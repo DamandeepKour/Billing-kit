@@ -356,4 +356,126 @@ describe("Invoice and payment discount flows", () => {
       }),
     );
   });
+
+  it("applies a coupon (not a promotion code) on subscription create when planAmount is provided", async () => {
+    const coupons = new CouponService();
+    coupons.registerCoupon({ code: "FLAT500", type: "flat", amountOff: 500 });
+
+    const gateway = createMockGateway({
+      createSubscription: jest.fn().mockResolvedValue({
+        id: "sub_2",
+        customerId: "cus_1",
+        planId: "plan_1",
+        status: "active",
+        currentPeriodEnd: new Date(),
+        cancelAtPeriodEnd: false,
+        provider: "mock",
+      }),
+    });
+    const subscriptions = new SubscriptionService(gateway, coupons);
+
+    const sub = await subscriptions.createSubscription({
+      customerId: "cus_1",
+      planId: "plan_1",
+      planAmount: 2000,
+      coupon: { code: "FLAT500", type: "flat", amountOff: 500 },
+    });
+
+    expect(sub.discountAmount).toBe(500);
+    expect(sub.appliedPromotionCode).toBeUndefined();
+    expect(sub.appliedCouponCode).toBe("FLAT500");
+    expect(gateway.createSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ couponCode: "FLAT500" }),
+      }),
+    );
+  });
+
+  it("redeems a promotion code by lookup when planAmount is zero (e.g. a free trial)", async () => {
+    const coupons = new CouponService();
+    coupons.registerCoupon({ code: "TRIAL", type: "percentage", percentOff: 100 });
+    const promo = coupons.createPromotionCode({ code: "FREETRIAL", coupon: "TRIAL" });
+
+    const gateway = createMockGateway();
+    const subscriptions = new SubscriptionService(gateway, coupons);
+
+    const sub = await subscriptions.createSubscription({
+      customerId: "cus_1",
+      planId: "plan_1",
+      promotionCode: "FREETRIAL",
+      // planAmount omitted → treated as 0, so the checkout-discount path is
+      // skipped in favor of a direct promotion-code lookup + redemption.
+    });
+
+    expect(sub.appliedPromotionCode).toBe("FREETRIAL");
+    expect(sub.appliedCouponCode).toBe("TRIAL");
+    expect(coupons.getPromotionCode(promo.id)?.timesRedeemed).toBe(1);
+  });
+
+  it("throws when a promotion code looked up at zero planAmount does not exist", async () => {
+    const coupons = new CouponService();
+    const gateway = createMockGateway();
+    const subscriptions = new SubscriptionService(gateway, coupons);
+
+    await expect(
+      subscriptions.createSubscription({
+        customerId: "cus_1",
+        planId: "plan_1",
+        promotionCode: "DOES_NOT_EXIST",
+      }),
+    ).rejects.toThrow(CouponError);
+    expect(gateway.createSubscription).not.toHaveBeenCalled();
+  });
+
+  it("validates and redeems a coupon by object when planAmount is zero", async () => {
+    const coupons = new CouponService();
+    coupons.registerCoupon({ code: "ZERO100", type: "percentage", percentOff: 100 });
+    const gateway = createMockGateway();
+    const subscriptions = new SubscriptionService(gateway, coupons);
+
+    const sub = await subscriptions.createSubscription({
+      customerId: "cus_1",
+      planId: "plan_1",
+      coupon: { code: "ZERO100", type: "percentage", percentOff: 100 },
+    });
+
+    expect(sub.appliedCouponCode).toBe("ZERO100");
+    expect(sub.discountAmount).toBeUndefined();
+    // recordRedemption looks the coupon up by code, so registering it first
+    // is what makes the redemption count observable here.
+    expect(coupons.getCoupon("ZERO100")?.timesRedeemed).toBe(1);
+  });
+
+  it("rejects an inactive coupon at zero planAmount without creating the subscription", async () => {
+    const coupons = new CouponService();
+    const gateway = createMockGateway();
+    const subscriptions = new SubscriptionService(gateway, coupons);
+
+    await expect(
+      subscriptions.createSubscription({
+        customerId: "cus_1",
+        planId: "plan_1",
+        coupon: { code: "OFF", type: "flat", amountOff: 100, active: false },
+      }),
+    ).rejects.toThrow(CouponError);
+    expect(gateway.createSubscription).not.toHaveBeenCalled();
+  });
+
+  it("ignores coupon/promotionCode inputs entirely when no CouponService is configured", async () => {
+    const gateway = createMockGateway();
+    const subscriptions = new SubscriptionService(gateway); // no couponService
+
+    const sub = await subscriptions.createSubscription({
+      customerId: "cus_1",
+      planId: "plan_1",
+      promotionCode: "ANY_CODE",
+      coupon: { code: "ANY", type: "flat", amountOff: 100 },
+    });
+
+    expect(sub.discountAmount).toBeUndefined();
+    expect(sub.appliedPromotionCode).toBeUndefined();
+    expect(gateway.createSubscription).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: {} }),
+    );
+  });
 });
