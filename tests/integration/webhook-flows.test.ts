@@ -157,6 +157,43 @@ describe("integration / webhook valid signatures", () => {
     ).toBe("payment.captured");
     expect(razorpay.headers["x-razorpay-event-id"]).toBe("rzp_evt_helper");
   });
+
+  it("verifies a hand-built payload signed via a raw Buffer (not a fixture object)", () => {
+    // createSignedWebhookRequest also accepts a raw string/Buffer payload
+    // directly — useful when the caller already has application JSON rather
+    // than one of the src/testing fixture builders.
+    const rawJson = JSON.stringify({
+      id: "evt_raw_buffer_flow",
+      type: "payment_intent.succeeded",
+      created: CREATED_AT,
+      data: {
+        object: {
+          id: "pi_raw_buffer",
+          object: "payment_intent",
+          amount: 4300,
+          currency: "usd",
+          status: "succeeded",
+        },
+      },
+    });
+    const request = createSignedWebhookRequest({
+      provider: "stripe",
+      payload: Buffer.from(rawJson, "utf8"),
+      secret: STRIPE_SECRET,
+      asBuffer: true,
+    });
+
+    const event = stripeBilling().verifyWebhook(
+      request.rawBody,
+      request.signature,
+    );
+
+    expect(event).toMatchObject({
+      id: "evt_raw_buffer_flow",
+      normalizedType: "payment.captured",
+      entity: { id: "pi_raw_buffer", amount: 4300 },
+    });
+  });
 });
 
 describe("integration / webhook invalid signatures", () => {
@@ -294,6 +331,27 @@ describe("integration / webhook duplicate event handling", () => {
 
     const replay = await billing.verifyAndClaimWebhook(request);
     expect(replay.duplicate).toBe(true);
+  });
+
+  it("persists exactly one processed record across a duplicate delivery", async () => {
+    const payload = createMockStripePaymentIntentSucceeded({
+      id: "pi_persisted_dup",
+    });
+    const billing = stripeBilling();
+    const request = stripeSigned(payload, { asBuffer: true });
+
+    await billing.processWebhook(request, jest.fn());
+    await billing.processWebhook(request, jest.fn());
+
+    const events = await billing.listWebhookEvents();
+    const matching = events.filter((e) => e.resourceId === "pi_persisted_dup");
+
+    expect(matching).toHaveLength(1);
+    expect(matching[0]).toMatchObject({
+      status: "processed",
+      resourceType: "payment",
+      resourceId: "pi_persisted_dup",
+    });
   });
 });
 
@@ -541,6 +599,31 @@ describe("integration / webhook raw-body handling", () => {
     expect(result.event.entity.id).toBe("pi_express");
   });
 
+  it("accepts a Uint8Array raw body (e.g. from a fetch-API Request)", async () => {
+    // Runtimes exposing the Fetch API (Cloudflare Workers, undici, etc.) hand
+    // back a Uint8Array from request.bytes()/arrayBuffer(), not a Node Buffer.
+    const signed = razorpaySigned(
+      createMockRazorpayPaymentCaptured({
+        id: "pay_uint8array",
+        created_at: CREATED_AT,
+      }),
+      { asBuffer: true, eventId: "rzp_evt_uint8array" },
+    );
+    const uint8Body = new Uint8Array(signed.rawBody as Buffer);
+
+    const parsed = parseWebhookRequest({
+      provider: "razorpay",
+      rawBody: uint8Body,
+      headers: signed.headers,
+    });
+
+    expect(Buffer.isBuffer(parsed.rawBody)).toBe(true);
+
+    const result = await razorpayBilling().processWebhook(parsed, jest.fn());
+    expect(result.event.normalizedType).toBe("payment.captured");
+    expect(result.event.entity.id).toBe("pay_uint8array");
+  });
+
   it("rejects parsed JSON objects as raw bodies", () => {
     expect(() =>
       ensureRawWebhookBody({
@@ -642,6 +725,32 @@ describe("integration / webhook normalized event output", () => {
         data: expect.any(Object),
       }),
     );
+  });
+
+  it("maps an unrecognized event type to normalizedType 'unknown' without crashing", () => {
+    const rawJson = JSON.stringify({
+      event: "totally.unrecognized.event",
+      created_at: CREATED_AT,
+      payload: {},
+    });
+    const request = createSignedRazorpayWebhookRequest({
+      payload: rawJson,
+      secret: RAZORPAY_SECRET,
+      asBuffer: true,
+      eventId: "rzp_evt_unrecognized",
+    });
+
+    const event = razorpayBilling().verifyWebhook(
+      request.rawBody,
+      request.signature,
+    );
+
+    expect(event.type).toBe("totally.unrecognized.event");
+    expect(event.normalizedType).toBe("unknown");
+    expect(event.entity.kind).toBe("unknown");
+    // No payload.{payment,refund,subscription,invoice,dispute}.entity matched,
+    // so the top-level event id falls back to the entity's generated id.
+    expect(event.id).toBe(event.entity.id);
   });
 
   it("maps provider-specific types onto the shared normalized catalog", () => {

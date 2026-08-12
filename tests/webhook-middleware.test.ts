@@ -91,6 +91,16 @@ describe("webhook / raw body helpers", () => {
     expect(resolveWebhookEventIdFromHeaders("stripe", {})).toBeUndefined();
   });
 
+  it("resolves a header via the case-insensitive scan even when its value is an array", () => {
+    // Direct/lowercase lookups miss a differently-cased key, falling back to
+    // the case-insensitive scan — which must also handle multi-value headers.
+    expect(
+      resolveWebhookSignature("razorpay", {
+        "X-Razorpay-Signature": ["sig_from_array", "ignored_second_value"],
+      }),
+    ).toBe("sig_from_array");
+  });
+
   it("builds RawWebhookRequest from headers + raw body", () => {
     const request = parseWebhookRequest({
       provider: "razorpay",
@@ -315,6 +325,24 @@ describe("webhook / raw body middleware", () => {
     expect(req.rawBody?.equals(body)).toBe(true);
   });
 
+  it("copies a pre-set req.rawBody onto req.body without re-buffering the stream", async () => {
+    // Distinct from "reuses an already-buffered body": here req.body is NOT
+    // already a string/Buffer, only req.rawBody is — a separate middleware
+    // (or framework) may have already set rawBody without touching body.
+    const middleware = createRawBodyMiddleware();
+    const rawBody = Buffer.from('{"already":"buffered"}');
+    const req = {
+      body: undefined as unknown,
+      rawBody,
+    };
+    const next = jest.fn();
+
+    middleware(req as unknown as RawBodyIncomingMessage, {} as ServerResponse, next);
+
+    expect(req.body).toBe(rawBody);
+    expect(next).toHaveBeenCalledWith();
+  });
+
   it("rejects bodies larger than the limit", async () => {
     const middleware = createRawBodyMiddleware({ limit: 8 });
     const req = new EventEmitter() as EventEmitter & {
@@ -335,6 +363,45 @@ describe("webhook / raw body middleware", () => {
 
     expect(error).toBeInstanceOf(BillingValidationError);
     expect(req.destroy).toHaveBeenCalled();
+  });
+
+  it("only settles once when the stream both exceeds the limit and later errors", async () => {
+    const middleware = createRawBodyMiddleware({ limit: 4 });
+    const req = new EventEmitter() as EventEmitter & {
+      body?: unknown;
+      rawBody?: Buffer;
+      destroy: jest.Mock;
+    };
+    req.destroy = jest.fn();
+    const next = jest.fn();
+
+    middleware(req as unknown as RawBodyIncomingMessage, {} as ServerResponse, next);
+    req.emit("data", Buffer.from("too-long"));
+    // A real stream may still emit "error" after destroy(); the second
+    // settle attempt must be a no-op rather than calling next() again.
+    req.emit("error", new Error("socket hang up"));
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(expect.any(BillingValidationError));
+  });
+
+  it("ignores a late 'end' event after the stream has already failed", async () => {
+    const middleware = createRawBodyMiddleware({ limit: 4 });
+    const req = new EventEmitter() as EventEmitter & {
+      body?: unknown;
+      rawBody?: Buffer;
+      destroy: jest.Mock;
+    };
+    req.destroy = jest.fn();
+    const next = jest.fn();
+
+    middleware(req as unknown as RawBodyIncomingMessage, {} as ServerResponse, next);
+    req.emit("data", Buffer.from("too-long"));
+    req.emit("end"); // fires despite destroy() — must not also succeed
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(expect.any(BillingValidationError));
+    expect(req.body).toBeUndefined();
   });
 });
 
@@ -521,6 +588,114 @@ describe("webhook / http handler", () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ ok: false });
+  });
+
+  it("falls back to res.send() when status()/json() are unavailable", async () => {
+    const signed = createSignedStripeWebhookRequest({
+      payload: createMockStripePaymentIntentSucceeded({
+        id: "pi_send_fallback",
+      }),
+      secret: STRIPE_SECRET,
+      asBuffer: true,
+    });
+    const httpHandler = stripeBilling().createWebhookHttpHandler(jest.fn());
+    const res = {
+      statusCode: 0,
+      sent: null as unknown,
+      send(payload: unknown) {
+        this.sent = payload;
+      },
+    };
+
+    await httpHandler({ body: signed.rawBody, headers: signed.headers }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.sent as string)).toMatchObject({
+      ok: true,
+      normalizedType: "payment.captured",
+    });
+  });
+
+  it("falls back to res.end() when status()/json()/send() are all unavailable", async () => {
+    const httpHandler = stripeBilling().createWebhookHttpHandler(jest.fn());
+    const res = {
+      statusCode: 0,
+      ended: null as unknown,
+      end(payload: unknown) {
+        this.ended = payload;
+      },
+    };
+
+    await httpHandler(
+      { body: Buffer.from("{}"), headers: { "stripe-signature": "t=1,v1=bad" } },
+      res,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.ended as string)).toMatchObject({ ok: false });
+  });
+
+  it("stringifies a non-Error thrown value in the error response", async () => {
+    const httpHandler = createWebhookHttpHandler({
+      provider: "stripe",
+      processWebhook: async () => {
+        throw "boom-string"; // eslint-disable-line no-throw-literal
+      },
+      handler: jest.fn(),
+    });
+    const res = {
+      statusCode: 0,
+      body: null as unknown,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        this.body = payload;
+        return this;
+      },
+    };
+
+    await httpHandler(
+      { body: Buffer.from("{}"), headers: { "stripe-signature": "t=1,v1=x" } },
+      res,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ ok: false, error: "boom-string" });
+  });
+
+  it("rejects fastAcknowledge when verifyAndClaimWebhook/completeWebhookProcessing are not provided", async () => {
+    const httpHandler = createWebhookHttpHandler({
+      provider: "stripe",
+      processWebhook: jest.fn(),
+      handler: jest.fn(),
+      fastAcknowledge: true,
+      // verifyAndClaimWebhook / completeWebhookProcessing intentionally omitted
+    });
+    const res = {
+      statusCode: 0,
+      body: null as unknown,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        this.body = payload;
+        return this;
+      },
+    };
+
+    await httpHandler(
+      { body: Buffer.from("{}"), headers: { "stripe-signature": "t=1,v1=x" } },
+      res,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("fastAcknowledge"),
+    });
   });
 
   it("parses via BillingKit.parseWebhookRequest", () => {

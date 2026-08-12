@@ -395,4 +395,34 @@ describe("integration / Razorpay webhook idempotent processing", () => {
     expect(handler).toHaveBeenCalledTimes(1);
     expect(replay.duplicate).toBe(true);
   });
+
+  it("marks the record failed when the handler throws, then allows retry", async () => {
+    const payload = createMockRazorpayPaymentCaptured({
+      id: "pay_handler_fail_rzp",
+      created_at: CREATED_AT,
+    });
+    const billing = razorpayBilling();
+    const request = signed(payload, {
+      asBuffer: true,
+      eventId: "rzp_evt_handler_fail",
+    });
+
+    await expect(
+      billing.processWebhook(request, async () => {
+        throw new Error("razorpay handler boom");
+      }),
+    ).rejects.toThrow("razorpay handler boom");
+
+    const events = await billing.listWebhookEvents();
+    const failed = events.find((e) => e.eventId === "rzp_evt_handler_fail");
+    expect(failed?.status).toBe("failed");
+    expect(failed?.error).toBe("razorpay handler boom");
+
+    // Failed claims are reclaimable so Razorpay's retry delivery succeeds.
+    const handler = jest.fn();
+    const retry = await billing.processWebhook(request, handler);
+    expect(retry.duplicate).toBe(false);
+    expect(retry.record.status).toBe("processed");
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 });
