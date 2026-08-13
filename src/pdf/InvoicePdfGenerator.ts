@@ -4,6 +4,7 @@ import type { GeneratePdfInput } from "../types/pdf";
 import { formatAmount } from "../utils/currency";
 export class InvoicePdfGenerator {
   constructor(private readonly config: BillingKitConfig) {}
+  
   generateInvoicePdf(input: GeneratePdfInput): Promise<Buffer> {
     const { invoice } = input;
     const company = input.company ?? this.config.company;
