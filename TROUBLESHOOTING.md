@@ -9,12 +9,15 @@ Related: [README webhook example](./README.md#webhook-example) · [local/staging
 ## Contents
 
 1. [Symptoms cheat sheet](#symptoms-cheat-sheet)
-2. [Webhook signature troubleshooting](#webhook-signature-troubleshooting)
-3. [Secret rotation](#secret-rotation)
-4. [Retry and duplicate event troubleshooting](#retry-and-duplicate-event-troubleshooting)
-5. [Payment / refund idempotency](#payment--refund-idempotency)
-6. [Release & npm publish](#release--npm-publish)
-7. [Quick diagnosis snippets](#quick-diagnosis-snippets)
+2. [Provider credential mistakes](#provider-credential-mistakes)
+3. [Webhook signature troubleshooting](#webhook-signature-troubleshooting)
+4. [Secret rotation](#secret-rotation)
+5. [Retry and duplicate event troubleshooting](#retry-and-duplicate-event-troubleshooting)
+6. [Payment / refund idempotency](#payment--refund-idempotency)
+7. [Stripe and Razorpay quick reference](#stripe-and-razorpay-quick-reference)
+8. [Local testing tips](#local-testing-tips)
+9. [Release & npm publish](#release--npm-publish)
+10. [Quick diagnosis snippets](#quick-diagnosis-snippets)
 
 ---
 
@@ -22,6 +25,8 @@ Related: [README webhook example](./README.md#webhook-example) · [local/staging
 
 | Symptom | Likely cause | Jump to |
 |---------|----------------|---------|
+| `InvalidConfigError` at `new BillingKit(...)` | Malformed/missing `secretKey` or `keyId` | [Credential mistakes](#provider-credential-mistakes) |
+| Razorpay calls fail with an auth error, but `BillingKit` constructed fine | `keyId` and `secretKey` swapped (secretKey has no format check) | [Credential mistakes](#provider-credential-mistakes) |
 | `WebhookVerificationError` / `WEBHOOK_VERIFICATION_FAILED` | Parsed JSON body, wrong secret, or rotation gap | [Signatures](#webhook-signature-troubleshooting) |
 | Webhooks work in Dashboard “test” but fail in your app | Framework parsed `req.body` before verify | [Raw body](#1-always-verify-the-raw-body) |
 | Failures only after rotating the secret | Retries still signed with the **old** secret | [Secret rotation](#secret-rotation) |
@@ -30,6 +35,38 @@ Related: [README webhook example](./README.md#webhook-example) · [local/staging
 | Razorpay disables the webhook endpoint | Non-2xx for ~24h of retries | [Retries](#retry-and-duplicate-event-troubleshooting) |
 | `IdempotencyConflictError` on payment/refund | Same key, different payload | [Idempotency](#payment--refund-idempotency) |
 | Publish workflow fails on tag | Version/CHANGELOG mismatch, CI red, OIDC setup | [Publish](#release--npm-publish) |
+
+---
+
+## Provider credential mistakes
+
+These are **startup-time** (`new BillingKit(...)`) credential issues — distinct from the *webhook secret* mistakes in the next section, which fail later, at signature-verification time.
+
+### Caught immediately (typed `InvalidConfigError`)
+
+| Mistake | What you'll see | Fix |
+|---------|------------------|-----|
+| Pasted a Stripe **publishable** key (`pk_test_…`/`pk_live_…`) as `secretKey` | `secretKey must be a Stripe secret or restricted key (sk_test_…, sk_live_…, rk_test_…, or rk_live_…)` | Use the **secret** key (or a restricted key, `rk_…`) from the Dashboard, never the publishable key — that one is meant to ship client-side |
+| Left `secretKey` empty, or only set it in `.env` without loading `.env` | `secretKey is required for Stripe` / `secretKey is required for Razorpay` | Confirm `process.env.STRIPE_SECRET_KEY` (or Razorpay equivalent) is actually populated at the point `new BillingKit(...)` runs |
+| Razorpay `keyId` missing the `rzp_` prefix, truncated, or has stray whitespace from a `.env` copy-paste | `keyId must be a Razorpay key id starting with "rzp_"` | Copy the **Key Id** field exactly from Razorpay Dashboard → Settings → API Keys; trim whitespace |
+| Typo'd or capitalized the provider (`"Stripe"`, `"razorPay"`) | `provider must be one of: stripe, razorpay` | Use the exact lowercase literal `"stripe"` or `"razorpay"` |
+
+Every one of these throws before any service is constructed — see [startup validation](./README.md#configuration) — so a bad credential never silently reaches a real API call.
+
+### Not caught at startup (no format to validate against)
+
+- **Razorpay `keyId` and `secretKey` swapped.** Razorpay's Dashboard shows **Key Id** (`rzp_…`, safe-looking) and **Key Secret** (an opaque string, no fixed prefix) side by side — easy to paste into the wrong config field. If you swap them so that the *real* secret ends up in `keyId`, validation fails loudly (`keyId` won't start with `rzp_`). But if you instead put the real `keyId` string into the `secretKey` field and something else (or nothing checkable) into `keyId`... more commonly, if `secretKey` receives a non-empty but *wrong* string, `BillingKit` constructs successfully — `secretKey` has no format check, only a non-empty check — and the mistake only surfaces as a Razorpay authentication failure on the first real API call. If credentials look right but every Razorpay call fails auth, re-copy both fields from the Dashboard rather than assuming the config shape is the problem.
+- **Restricted key without the needed permissions.** A Stripe restricted key (`rk_…`) passes format validation but can still 403 on specific operations (e.g. missing "Write" on PaymentIntents). Check the key's permissions in the Stripe Dashboard, not just its prefix.
+- **Test/live mismatch between the API key and the webhook secret.** `secretKey: sk_live_…` with a webhook endpoint secret copied from the *test* endpoint (or vice versa) passes startup validation fine — signatures will just never verify. Use `billing.runDiagnostics()` (below) to see which mode your `secretKey` looks like it's in.
+
+### Diagnose without exposing secrets
+
+```typescript
+const report = billing.runDiagnostics();
+console.log(report.status, report.errors, report.warnings, report.recommendations);
+```
+
+`healthCheck()` / `verifyProviderConfig()` / `runDiagnostics()` never return raw secrets — only a masked `hint` (last 4 characters) and a detected `mode` (`test`/`live`/`unknown`). See the [README § Provider diagnostics](./README.md#provider-diagnostics) example.
 
 ---
 
@@ -256,6 +293,40 @@ Separate from webhook dedupe: API calls use `idempotencyKey`.
 - Retries after network blips should reuse the **same** key.
 
 See README payment / refund sections. Inject `idempotencyRequestRepository` for multi-instance safety.
+
+---
+
+## Stripe and Razorpay quick reference
+
+The facts that differ by provider, gathered in one place rather than spread across sections above. For the full feature-by-feature parity table (what's supported, partial, planned, or N/A per provider) see **[docs/compatibility.md](./docs/compatibility.md)**.
+
+| | Stripe | Razorpay |
+|---|---|---|
+| Signature header | `Stripe-Signature` | `X-Razorpay-Signature` |
+| Signature scheme | `t=…,v1=…` (has a timestamp — clock skew can break it) | HMAC-SHA256 hex of the raw body (no timestamp) |
+| Secret you need for webhooks | Endpoint signing secret (`whsec_…`) — **not** the API key | Dashboard → Webhooks secret — **not** the Key Secret |
+| API credential shape | `secretKey`: `sk_test_…` / `sk_live_…` / `rk_test_…` / `rk_live_…` | `keyId`: `rzp_…` **and** `secretKey`: opaque string |
+| Event id for dedupe | Verified payload `event.id` | `X-Razorpay-Event-Id` header (fingerprint fallback if absent) |
+| Retry window before giving up | Exponential backoff; endpoint can be auto-disabled after sustained failures | Exponential backoff, up to ~24h; endpoint can be auto-disabled after ~24h of failures |
+| Checkout model | PaymentIntents (`createPayment`/`capturePayment`) | Orders + signature (`createOrder` + `verifyPaymentSignature`) |
+| Responding to a dispute | Submit evidence (`updateDisputeEvidence`) | Accept or contest (`acceptDispute`/`contestDispute`) |
+| Calling the other provider's method | Throws `UnsupportedOperationError` naming the operation | Throws `UnsupportedOperationError` naming the operation |
+
+---
+
+## Local testing tips
+
+- **Sign and verify fixtures with no live provider at all.** `billing-kit/testing` ships fixture builders (`createMockStripePaymentIntentSucceeded`, `createMockRazorpayPaymentCaptured`, …) and signers (`createSignedStripeWebhookRequest`, `createSignedRazorpayWebhookRequest`) — see [§ Local verification](#3-local-verification) above for a runnable example.
+- **Print a ready-to-run curl command.** [`examples/testing/webhook-local.ts`](./examples/testing/webhook-local.ts) builds a signed request and prints the exact `curl` invocation for your local server:
+  ```bash
+  npx ts-node examples/testing/webhook-local.ts razorpay payment
+  npx ts-node examples/testing/webhook-local.ts stripe refund
+  ```
+- **Verify fixtures pass through `BillingKit` without any network call.** [`examples/testing/webhook-staging.ts`](./examples/testing/webhook-staging.ts) exercises the full verify → normalize path against the fixture catalog. Full options: [examples/testing/README.md](./examples/testing/README.md).
+- **Use test-mode credentials for everything local.** Stripe `sk_test_…` and Razorpay `rzp_test_…` keys are safe to use in development and in fixtures/tests committed to a repo — they cannot move real money. Never use `_live_` credentials outside production config. `billing.runDiagnostics()` reports which mode it thinks your Stripe key is in.
+- **Testing against a real Dashboard delivery to localhost** requires a public tunnel (ngrok, Cloudflare Tunnel, etc.) — point the provider's Dashboard webhook URL at the tunnel, not at `localhost` directly.
+- **Simulating subscription lifecycles** (trials, renewals, payment failures, upgrades) without waiting on real billing cycles: `billing-kit/testing`'s lifecycle simulator (`createTestClock` and friends) — see the test suite under `tests/billing-lifecycle-simulation.test.ts` for usage patterns.
+- **Always POST the exact raw body that was signed.** The #1 cause of "it works with my fixture but not with the Dashboard" is a proxy, framework default body parser, or manual `JSON.stringify` re-encoding the body before it reaches your route — see [§ Always verify the raw body](#1-always-verify-the-raw-body).
 
 ---
 
