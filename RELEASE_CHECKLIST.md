@@ -37,7 +37,8 @@ Bump:    patch | minor | major
 
 - [ ] CI green on `main`
 - [ ] Trusted Publisher on npm points at `publish.yml` (OIDC)
-- [ ] Optional: GitHub Environment `npm` reviewers; `v*` tag protection
+- [ ] npm account 2FA is set to **Authorization and Publishing** (one-time setup, not per-release — see [PUBLISHING.md § Release trust & npm 2FA checklist](./PUBLISHING.md#release-trust--npm-2fa-checklist))
+- [ ] GitHub Environment `npm` has required reviewers; `v*` tags are protected (one-time setup)
 - [ ] Working tree committed on `main`
 
 ### Publish (OIDC — preferred)

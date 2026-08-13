@@ -233,6 +233,53 @@ Inspect the tarball: it must include `dist/`, `README.md`, `LICENSE`, `CHANGELOG
 
 ---
 
+## Release trust & npm 2FA checklist
+
+`billing-kit` already publishes via OIDC Trusted Publishing (see [One-time trusted publisher setup](#one-time-trusted-publisher-setup)) — there is no long-lived `NPM_TOKEN` for an attacker to steal. The items below are the remaining trust surface: your npm **account**, and the tag/commit provenance chain that trusted publishing is built on top of.
+
+### One-time npm account hardening
+
+- [ ] **Enable two-factor authentication** on the npm account that owns `billing-kit`: npmjs.com → avatar → **Account Settings** → **Two-Factor Authentication**.
+- [ ] Set the 2FA requirement level to **"Authorization and Publishing"**, not just "Authorization only" — the latter protects login but not publish/write actions.
+- [ ] Store the recovery codes somewhere durable and *not* next to the 2FA device itself (a password manager, not a sticky note).
+- [ ] Confirm no long-lived **publish**-scoped access tokens exist for this account (npmjs.com → Access Tokens) beyond what's strictly needed — Trusted Publishing means you shouldn't need one for CI at all.
+- [ ] If a classic token must exist for some other reason, scope it **read-only** and give it an expiration.
+
+With "Authorization and Publishing" enabled, the [manual/emergency publish path](#manual--emergency-publish-no-provenance-from-oidc) (`npm publish --access public`, run when Actions is unavailable) will prompt for a one-time code at the terminal — that's expected, not a bug.
+
+### Repository-level trust
+
+- [ ] **Trusted Publisher** on npm points at the exact workflow filename (`publish.yml`) and repo (`DamandeepKour/Billing-kit`) — see [One-time trusted publisher setup](#one-time-trusted-publisher-setup). A mismatch here is the #1 cause of OIDC publish failures.
+- [ ] GitHub → Settings → **Environments** → `npm` has required reviewers configured, so a compromised or careless CI run still can't publish unattended (`publish.yml` already targets `environment: npm`).
+- [ ] GitHub → Settings → **Tags** → protect the `v*` pattern so only maintainers can push (or force-push) release tags.
+- [ ] GitHub → Settings → **Branches** → `main` requires the CI check to pass before merge, so nothing unreviewed reaches the commit a tag can point at.
+
+### Tag signing (optional, recommended for solo/small-team maintainers)
+
+An annotated tag (`git tag -a`, already used throughout this doc) records a tagger, timestamp, and message — but anyone with push access can create one claiming to be anyone. A **signed** tag adds a GPG (or SSH, via `gitsign`) signature that `git tag -v` / GitHub's "Verified" badge can check:
+
+```bash
+git tag -s vX.Y.Z -m "vX.Y.Z"   # -s instead of -a — requires a GPG key configured with git
+git tag -v vX.Y.Z               # verify a signature before trusting a tag you didn't create
+```
+
+This is optional — OIDC Trusted Publishing already ties the published package to a specific GitHub Actions run, which is a stronger guarantee than a signed tag alone. Sign tags additionally if you want the tag itself (not just the resulting npm package) to be independently verifiable.
+
+### Fixing a tag pushed to the wrong commit
+
+Never reuse a version number, but a **tag** (before anything was published from it) can be safely moved if you catch the mistake immediately:
+
+```bash
+git tag -d vX.Y.Z              # delete locally
+git push origin :refs/tags/vX.Y.Z   # delete on the remote
+git tag -a vX.Y.Z -m "vX.Y.Z"  # re-tag the correct commit
+git push origin vX.Y.Z
+```
+
+Only do this if the Publish workflow has **not** already succeeded for that tag — once `npm publish` has run, follow [Rollback (npm)](#rollback-npm) instead; you cannot delete or reuse a published version.
+
+---
+
 ## Secrets & safe release behavior
 
 `npm run security:check` (**[scripts/check-secrets.mjs](./scripts/check-secrets.mjs)**) scans two things before every release:

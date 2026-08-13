@@ -343,6 +343,7 @@ Maintainer-facing. Consumer upgrades: [UPGRADING.md](./UPGRADING.md). Full flow:
 | `prepublishOnly` fails | Lint, typecheck, tests, or the secret scan red — fix before publish |
 | OIDC / Trusted Publisher error | npm Package Settings → Trusted Publisher → `publish.yml`, repo `DamandeepKour/Billing-kit` |
 | Missing provenance badge | Publish via Actions (`id-token: write`), not a local token publish |
+| `npm publish` hangs waiting for a code | Expected — npm account 2FA is set to "Authorization and Publishing" (see [PUBLISHING.md § Release trust & npm 2FA checklist](./PUBLISHING.md#release-trust--npm-2fa-checklist)); enter the OTP, or publish via the OIDC workflow instead (no prompt) |
 | GitHub Release missing notes | `npm run release:notes -- --version X.Y.Z` and attach manually |
 
 ```bash
