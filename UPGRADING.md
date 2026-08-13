@@ -53,17 +53,78 @@ No automated codemod is provided for 1.0.0; treat README examples as the source 
 
 ---
 
-## Planned / future majors
+## Deprecated API guidance
 
-When a **2.0.0** (or later) ships, document:
+How deprecation actually works in `billing-kit`, so you can find out what's deprecated without waiting for something to break:
 
-- Removed or renamed exports
-- Config fields that become required
-- Changes to normalized webhook `normalizedType` values
-- Amount or currency behavior changes
-- Minimum Node version bumps
+- **In your editor**: deprecated fields/functions carry a `/** @deprecated ... */` JSDoc tag. TypeScript and most editors render these with a strikethrough and show the replacement in the hover tooltip — no need to grep source.
+- **In the CHANGELOG**: every deprecation gets a `### Deprecated` entry in the release that introduces it (see [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)), separate from `### Removed`, which only appears in the later major that actually deletes it.
+- **The policy**: per [VERSIONING.md § Stable line](./VERSIONING.md#stable-line), a deprecation ships in a **minor** release and keeps working; removal only happens in a later **major**. You always get at least one minor release of advance notice before a `major` bump can remove something you're using.
+- **Deprecated fields keep working, silently, until removed** — `billing-kit` does not print runtime warnings for deprecated fields today. Rely on your editor/TS, not console output, to catch them.
 
-Until then, this section stays empty on purpose.
+### Real example: `Coupon.value` → `amountOff` / `percentOff`
+
+`Coupon.value` (the original, ambiguous field — did `10` mean 10% off or 10 currency units off?) is deprecated in favor of the explicit `amountOff` / `percentOff` fields, which say what they mean. Both still work today; `resolveCouponValue()` falls back to `value` when the specific field is absent (`src/coupon/CouponService.ts`):
+
+```typescript
+// Old (still works — value is inferred from `type`)
+billing.registerCoupon({
+  code: "SAVE10",
+  type: "percentage",
+  value: 10, // ⚠️ deprecated — ambiguous without reading `type`
+});
+
+// New (explicit, preferred)
+billing.registerCoupon({
+  code: "SAVE10",
+  type: "percentage",
+  percentOff: 10, // reads correctly on its own
+});
+```
+
+```typescript
+// Old
+billing.registerCoupon({ code: "FLAT500", type: "flat", value: 500 });
+
+// New
+billing.registerCoupon({ code: "FLAT500", type: "flat", amountOff: 500 });
+```
+
+Nothing forces you to migrate this today — `value` is not scheduled for removal in any specific upcoming release. Prefer the explicit fields in new code, and migrate existing call sites opportunistically.
+
+---
+
+## Migrating to a new major version (template)
+
+No major version has shipped since `1.0.0` — this section is a **template**, filled in for real the first time `2.0.0` (or later) ships. It exists now so you know what to expect from a `billing-kit` major migration before you ever need to do one.
+
+When a new major ships, this section gets a dedicated `## vX.0.0` entry, in this shape:
+
+```markdown
+## v2.0.0
+
+### What changed
+- Bullet list of every breaking change, in plain language (not a commit log)
+
+### Before / after
+​```typescript
+// v1.x
+old.usage.here();
+​```
+​```typescript
+// v2.x
+new.usage.here();
+​```
+
+### Migration steps
+1. Concrete, ordered steps — update this, then run that, then verify the other thing
+2. ...
+
+### Rollback
+How to pin back to the last v1.x release if the migration doesn't go smoothly.
+```
+
+Every item listed in [VERSIONING.md § Public API surface](./VERSIONING.md#public-api-surface-semver-contract) as covered by SemVer is a candidate for a breaking change in that entry: package exports, documented `BillingKit` methods/config, normalized webhook shapes, and documented error types. Anything **not** on that list (internal `src/` modules, `examples/`, in-memory repository internals, diagnostic wording) can change without a major bump or an entry here.
 
 ---
 

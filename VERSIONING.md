@@ -54,7 +54,7 @@ For the current Node version matrix and the exact Stripe vs Razorpay feature par
 
 - Do not publish breaking changes without a **major** bump
 - Document breaking changes in [UPGRADING.md](./UPGRADING.md) and the CHANGELOG `### Changed` / `### Removed` sections
-- Prefer deprecation in a minor release before removal in a later major, when practical
+- Prefer deprecation in a minor release before removal in a later major, when practical — a deprecation always ships with a `### Deprecated` CHANGELOG entry and a `@deprecated` JSDoc tag on the affected field/function; see [UPGRADING.md § Deprecated API guidance](./UPGRADING.md#deprecated-api-guidance) for how to find these and a real example (`Coupon.value` → `amountOff`/`percentOff`)
 
 ---
 
