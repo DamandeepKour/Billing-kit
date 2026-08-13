@@ -61,6 +61,7 @@ function main() {
   mustExist(".github/workflows/ci.yml");
   mustExist(".github/workflows/publish.yml");
   mustExist("scripts/validate-package.mjs");
+  mustExist("scripts/check-secrets.mjs");
 
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   const changelog = readFileSync(join(root, "CHANGELOG.md"), "utf8");
@@ -87,6 +88,7 @@ function main() {
     "build",
     "validate:package",
     "validate:pack",
+    "security:check",
     "prepublishOnly",
     "prepack",
     "ci",
@@ -98,6 +100,24 @@ function main() {
   }
   if (errors.every((message) => !message.includes("scripts missing"))) {
     ok("package.json release scripts");
+  }
+
+  if (!pkg.scripts?.["security:check"]?.includes("check-secrets.mjs")) {
+    fail('package.json scripts."security:check" must run scripts/check-secrets.mjs');
+  }
+  if (!pkg.scripts?.ci?.includes("security:check")) {
+    fail('package.json scripts.ci must run "security:check"');
+  }
+  if (!pkg.scripts?.prepublishOnly?.includes("check-secrets.mjs")) {
+    fail("package.json scripts.prepublishOnly must run the secret scanner");
+  }
+  if (
+    errors.every(
+      (message) =>
+        !message.includes("security:check") && !message.includes("secret scanner"),
+    )
+  ) {
+    ok("security:check wired into ci + prepublishOnly");
   }
 
   if (!pkg.publishConfig?.access || pkg.publishConfig.provenance !== true) {
@@ -145,6 +165,12 @@ function main() {
     fail("ci.yml must run build and validate:pack");
   } else {
     ok("ci.yml lint/typecheck/test/build/pack");
+  }
+
+  if (!/security:check|check-secrets/.test(ci)) {
+    fail("ci.yml must run the secret scanner (security:check)");
+  } else {
+    ok("ci.yml runs the secret scanner");
   }
 
   if (!publish.includes("tags:") || !publish.includes("v*")) {

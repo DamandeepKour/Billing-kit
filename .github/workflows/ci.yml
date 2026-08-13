@@ -44,6 +44,9 @@ jobs:
       - name: Build package
         run: npm run build
 
+      - name: Security: check for secrets (repo + package output)
+        run: npm run security:check
+
       - name: Release safety checks
         run: npm run release:check
 

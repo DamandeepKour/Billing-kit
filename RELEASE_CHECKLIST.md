@@ -29,6 +29,7 @@ Bump:    patch | minor | major
 - [ ] `npm run ci` passes
 - [ ] `npm run release:check -- --release` passes
 - [ ] `npm run validate:pack` passes
+- [ ] `npm run security:check` passes — no secrets/credential files in the repo or the tarball (see [PUBLISHING.md § Secrets & safe release behavior](./PUBLISHING.md#secrets--safe-release-behavior))
 - [ ] `npm publish --dry-run` succeeds (no upload)
 - [ ] Tarball reviewed (dist + docs only; no `src/` / `tests/` / `examples/`)
 

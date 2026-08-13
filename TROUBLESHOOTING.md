@@ -268,7 +268,8 @@ Maintainer-facing. Consumer upgrades: [UPGRADING.md](./UPGRADING.md). Full flow:
 | Tag `vX.Y.Z` ≠ `package.json` version | Retag or bump version so they match |
 | `release:check --release` fails | Add `## [X.Y.Z]` to CHANGELOG; fix publishConfig / workflows |
 | `validate:pack` fails | Run `npm run build`; ensure exports and docs exist; no `src/` in tarball |
-| `prepublishOnly` fails | Lint, typecheck, or tests red — fix before publish |
+| `security:check` fails | A real secret, `.env`, or credential file was found — **rotate it immediately at the provider**, then remove it from git history (not just a new commit); see [PUBLISHING.md § Secrets & safe release behavior](./PUBLISHING.md#secrets--safe-release-behavior) |
+| `prepublishOnly` fails | Lint, typecheck, tests, or the secret scan red — fix before publish |
 | OIDC / Trusted Publisher error | npm Package Settings → Trusted Publisher → `publish.yml`, repo `DamandeepKour/Billing-kit` |
 | Missing provenance badge | Publish via Actions (`id-token: write`), not a local token publish |
 | GitHub Release missing notes | `npm run release:notes -- --version X.Y.Z` and attach manually |

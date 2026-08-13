@@ -87,7 +87,7 @@ Confirm:
 - [ ] `CHANGELOG.md` lists the upcoming version
 - [ ] `npm run validate:pack` passes
 - [ ] `npm run release:check -- --release` passes
-- [ ] No secrets in the package (`npm pack --dry-run` / inspect tarball)
+- [ ] `npm run security:check` passes — no secrets in the repo or the package (see [Secrets & safe release behavior](#secrets--safe-release-behavior))
 - [ ] Trusted Publisher on npm points at `publish.yml` (for OIDC releases)
 - [ ] [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) filled for this version
 
@@ -192,7 +192,7 @@ On the package page, npm should show a **Provenance** badge for the version publ
 |------|------------------|-------|
 | 1 | Update CHANGELOG + UPGRADING | Move Unreleased → version section |
 | 2 | `npm version <patch\|minor\|major>` | Bumps `package.json` + creates tag (or tag later) |
-| 3 | `npm run ci` | Lint, typecheck, test, build, release:check, pack |
+| 3 | `npm run ci` | Lint, typecheck, test, build, security scan, release:check, pack |
 | 4 | `npm run release:check -- --release` | Requires `## [X.Y.Z]` in CHANGELOG |
 | 5 | `npm publish --dry-run` | Runs `prepublishOnly` + `prepack`; no upload |
 | 6 | `git push origin main && git push origin vX.Y.Z` | Triggers Publish workflow |
@@ -201,7 +201,7 @@ On the package page, npm should show a **Provenance** badge for the version publ
 
 Lifecycle hooks:
 
-- **`prepublishOnly`**: lint → typecheck → test → `release:check --release`
+- **`prepublishOnly`**: secret scan (repo-only) → lint → typecheck → test → `release:check --release`
 - **`prepack`**: build → `validate:package` (docs, exports, CJS/ESM smoke load)
 
 Safety scripts:
@@ -209,6 +209,7 @@ Safety scripts:
 ```bash
 npm run validate:package   # docs + dist + exports + smoke load
 npm run validate:pack      # above + npm pack tarball contents
+npm run security:check     # secrets/credentials in the repo AND the npm pack tarball
 npm run release:check      # SemVer / changelog / workflow / publishConfig
 npm run release:notes      # print CHANGELOG section for current version
 ```
@@ -221,6 +222,7 @@ npm run release:notes      # print CHANGELOG section for current version
 npm run build
 npm run validate:package
 npm run validate:pack
+npm run security:check
 npm run release:check
 npm run release:check -- --release --pack
 npm pack --dry-run
@@ -228,6 +230,38 @@ npm publish --dry-run
 ```
 
 Inspect the tarball: it must include `dist/`, `README.md`, `LICENSE`, `CHANGELOG.md`, and must **not** include `src/`, `tests/`, `examples/`, or `.github/`.
+
+---
+
+## Secrets & safe release behavior
+
+`npm run security:check` (**[scripts/check-secrets.mjs](./scripts/check-secrets.mjs)**) scans two things before every release:
+
+1. **The repository** — every git-tracked file (`git ls-files`), so an accidental `git add` of a real credential is caught before it's ever pushed.
+2. **The package output** — the actual `npm pack` tarball (extracted and scanned file-by-file), so what would land on the npm registry is checked directly, not inferred from `package.json` → `files`.
+
+Both scans reject the same things:
+
+| Check | Examples |
+|-------|----------|
+| Real `.env` files | `.env`, `.env.local`, `.env.production` — `.env.example` / `.env.sample` / `.env.template` are explicitly allowed (placeholder values only) |
+| Credential/key files | `*.pem`, `*.key`, `*.p12`, `*.pfx`, `*.crt`, `*.cer`, `id_rsa`, `id_ed25519`, `.pgpass` |
+| Private key material | Any `-----BEGIN ... PRIVATE KEY-----` block, wherever it appears |
+| Cloud / platform tokens | AWS access key ids (`AKIA…`/`ASIA…`), GitHub tokens (`ghp_…`, `gho_…`, …), Slack tokens (`xox…`), an `_authToken=` assignment (e.g. in a committed `.npmrc`) |
+| Live provider keys | Stripe `sk_live_…` / `rk_live_…`, Razorpay `rzp_live_…` |
+
+The tarball is additionally asserted to contain **zero** files matching the `.env`/credential-file checks, full stop — regardless of what the content scan finds.
+
+**Test fixtures are handled deliberately, not silently ignored.** `billing-kit`'s own tests exercise Stripe/Razorpay live-vs-test mode detection using deliberately fake `sk_live_…`/`rzp_live_…`-shaped strings (see `tests/diagnostics.test.ts`, `tests/audit.test.ts`). A live-key-*shaped* match under `tests/` or `examples/` is reported as a visible **warning**, not a failure — every other pattern above (private keys, cloud tokens, real `.env` files) is a hard failure everywhere, including in tests, since there is never a legitimate reason for those to appear anywhere in the repo.
+
+```bash
+npm run security:check              # full: repo + tarball (run after `npm run build`)
+node scripts/check-secrets.mjs --repo-only  # fast: repo only, no build required
+```
+
+`security:check` runs as its own step in [CI](./.github/workflows/ci.yml) (after build, before pack validation), inside `npm run ci` (which [publish.yml](./.github/workflows/publish.yml) runs before publishing), and as a fast repo-only pass at the very start of `prepublishOnly` — so it also guards a manual/emergency `npm publish` that skips CI.
+
+**If it ever finds a real secret:** rotate the credential at the provider **immediately** — treat it as compromised the moment it was committed, even if you catch it before pushing. A new commit that deletes the file is not enough; the secret is still in git history. Use `git filter-repo` (or contact GitHub Support for public repos) to purge it from history, then force-push and have every clone re-clone.
 
 ---
 
