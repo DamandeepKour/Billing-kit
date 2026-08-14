@@ -337,6 +337,14 @@ Publish / CI failures: see [TROUBLESHOOTING.md → Release & npm publish](./TROU
 
 ## Checklist
 
-Use the full checklist in **[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)** (copy the blank template for each release).
+The five things every release actually depends on, each backed by an automated check above — work through these in order before running the final publish command:
 
-First stable release prep history lives in the same file under **Release log: 1.0.0**.
+- [ ] **2FA is enabled on the npm account** — [§ One-time npm account hardening](#one-time-npm-account-hardening)
+- [ ] **2FA is required for publishing** (and org-wide, if applicable) — same section, "Authorization and Publishing"
+- [ ] **Package contents verified** — `npm run validate:pack` and `npm pack --dry-run` both pass; both run automatically in [CI](./.github/workflows/ci.yml) and [Publish](./.github/workflows/publish.yml) — [§ Dry-run & packing](#dry-run--packing)
+- [ ] **No secrets included** — `npm run security:check` passes for the repo *and* the packed tarball — [§ Secrets & safe release behavior](#secrets--safe-release-behavior)
+- [ ] **Release tagged in git** — annotated `vX.Y.Z` tag, pushed, matching `package.json` (enforced by `publish.yml`) — [§ Bump the version](#2-bump-the-version)
+
+Use the full copy-paste checklist in **[RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)** for every release; this list is the trust-and-safety subset of it, kept here as the last thing you read before publishing.
+
+First stable release prep history lives in RELEASE_CHECKLIST.md under **Release log: 1.0.0**.
