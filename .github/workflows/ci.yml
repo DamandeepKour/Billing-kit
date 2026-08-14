@@ -53,6 +53,9 @@ jobs:
       - name: Validate package contents (npm pack)
         run: npm run validate:pack
 
+      - name: Inspect package contents (npm pack --dry-run)
+        run: npm pack --dry-run
+
       - name: Upload packed tarball (Node 22)
         if: matrix.node-version == '22.x'
         run: |

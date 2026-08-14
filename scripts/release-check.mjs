@@ -173,6 +173,12 @@ function main() {
     ok("ci.yml runs the secret scanner");
   }
 
+  if (!/npm pack --dry-run/.test(ci)) {
+    fail("ci.yml must run npm pack --dry-run for a human-readable contents check");
+  } else {
+    ok("ci.yml runs npm pack --dry-run");
+  }
+
   if (!publish.includes("tags:") || !publish.includes("v*")) {
     fail("publish.yml must trigger on v* tags");
   }
@@ -183,6 +189,17 @@ function main() {
     fail("publish.yml must run npm run ci before publish");
   } else {
     ok("publish.yml tag + OIDC + ci gate");
+  }
+
+  if (!/npm pack --dry-run/.test(publish)) {
+    fail("publish.yml must run npm pack --dry-run before npm publish");
+  } else {
+    ok("publish.yml inspects package contents before publish");
+  }
+  if (!publish.includes("--provenance")) {
+    fail("publish.yml must publish with --provenance");
+  } else {
+    ok("publish.yml publishes with provenance");
   }
 
   for (const message of warnings) {

@@ -58,6 +58,12 @@ jobs:
       - name: Lint, typecheck, test, build, pack validation
         run: npm run ci
 
+      - name: Inspect package contents (npm pack --dry-run)
+        # Last human-readable checkpoint before publish — the tarball listing
+        # for this exact commit/version, visible in the log a reviewer sees
+        # before approving the "npm" environment gate below.
+        run: npm pack --dry-run
+
       - name: Publish with provenance
         # Trusted publishing exchanges a short-lived OIDC token — no NPM_TOKEN secret.
         # Provenance attestations are generated automatically for public repos.
