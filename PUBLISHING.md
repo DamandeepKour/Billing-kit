@@ -240,7 +240,8 @@ Inspect the tarball: it must include `dist/`, `README.md`, `LICENSE`, `CHANGELOG
 ### One-time npm account hardening
 
 - [ ] **Enable two-factor authentication** on the npm account that owns `billing-kit`: npmjs.com → avatar → **Account Settings** → **Two-Factor Authentication**.
-- [ ] Set the 2FA requirement level to **"Authorization and Publishing"**, not just "Authorization only" — the latter protects login but not publish/write actions.
+- [ ] **Require 2FA for publishing**, not just login: set the requirement level to **"Authorization and Publishing"** (not "Authorization only" — that protects login but not publish/write actions). This is what actually gates `npm publish` on a one-time code.
+- [ ] If `billing-kit` is ever moved under an **npm Organization**, additionally enable that org's **"Require two-factor authentication"** setting so it applies to every member, not just this account.
 - [ ] Store the recovery codes somewhere durable and *not* next to the 2FA device itself (a password manager, not a sticky note).
 - [ ] Confirm no long-lived **publish**-scoped access tokens exist for this account (npmjs.com → Access Tokens) beyond what's strictly needed — Trusted Publishing means you shouldn't need one for CI at all.
 - [ ] If a classic token must exist for some other reason, scope it **read-only** and give it an expiration.

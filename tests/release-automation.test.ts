@@ -78,13 +78,13 @@ describe("release automation / workflows", () => {
   it("CI runs lint, typecheck, test, build, release check, and pack validation", () => {
     const ci = read(".github/workflows/ci.yml");
 
-    console.log(ci);
     expect(ci).toContain("npm run lint");
     expect(ci).toContain("npm run typecheck");
     expect(ci).toContain("npm test");
     expect(ci).toContain("npm run build");
     expect(ci).toContain("npm run release:check");
     expect(ci).toContain("npm run validate:pack");
+    expect(ci).toContain("npm pack --dry-run");
     expect(ci).toContain("upload-artifact");
     expect(ci).toMatch(/node-version: \[18\.x, 20\.x, 22\.x\]/);
   });
@@ -98,9 +98,15 @@ describe("release automation / workflows", () => {
     expect(publish).toContain("contents: write");
     expect(publish).toContain("npm run ci");
     expect(publish).toContain("release:check -- --release");
+    expect(publish).toContain("npm pack --dry-run");
     expect(publish).toContain("npm publish --access public --provenance");
     expect(publish).toContain("extract-changelog.mjs");
     expect(publish).toContain("softprops/action-gh-release");
+
+    // The dry-run inspection must happen before the actual publish step.
+    expect(publish.indexOf("npm pack --dry-run")).toBeLessThan(
+      publish.indexOf("npm publish --access public --provenance"),
+    );
   });
 });
 
